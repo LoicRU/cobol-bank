@@ -16,3 +16,5 @@ reports/*
 demo/
 tests/DEMO_TMP/
 tests/WEB_TMP/
+tests/RELEVE_*
+tests/BATCH_*
