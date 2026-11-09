@@ -1,17 +1,23 @@
-*> COMPTE.cob - acces au fichier indexe des comptes + depot / retrait
+*> COMPTE.cob - acces au fichier indexe des comptes + depot / retrait / virement
 *>
-*> Appel : CALL "COMPTE" USING LK-ACTION LK-COMPTE-REC LK-MONTANT LK-STATUS
+*> Appel : CALL "COMPTE" USING LK-ACTION LK-COMPTE-REC LK-MONTANT LK-DST
+*>                             LK-STATUS
 *>   LK-ACTION : "C" creer, "L" lire (par LK-CPT-NUM), "U" mettre a jour,
-*>               "D" depot, "R" retrait (compte LK-CPT-NUM, montant LK-MONTANT)
-*>   LK-MONTANT : utilise seulement par D et R
+*>               "D" depot, "R" retrait (compte LK-CPT-NUM, montant LK-MONTANT),
+*>               "V" virement de LK-CPT-NUM vers LK-DST (montant LK-MONTANT)
+*>   LK-MONTANT : utilise seulement par D, R et V
+*>   LK-DST     : compte destination, utilise seulement par V
 *>   LK-STATUS :
 *>     00 ok                      22 cle deja existante
 *>     23 compte introuvable      99 action inconnue
 *>     91 montant invalide (0)    92 compte non actif
 *>     93 solde insuffisant       94 depassement de capacite du solde
+*>     95 virement vers le meme compte
 *>     98 operation faite mais ligne d'historique non ecrite
 *>     autre : FILE STATUS d'une erreur d'entree/sortie
-*> D et R ecrivent une ligne d'historique (acceptee ou refusee) via TRX.
+*> D, R et V ecrivent une ligne d'historique (acceptee ou refusee) via TRX.
+*> V est atomique : tout est controle avant d'ecrire ; si l'ecriture de la
+*> destination echoue, la source est remise dans son etat d'origine.
 *> Fichier : variable d'environnement COMPTES_FILE, sinon data/COMPTES.dat
 IDENTIFICATION DIVISION.
 PROGRAM-ID. COMPTE.
@@ -32,10 +38,20 @@ COPY "COMPTE.cpy".
 
 WORKING-STORAGE SECTION.
 01 WS-FS          PIC XX.
+01 WS-FS-SRC      PIC XX.
+01 WS-FS-DST      PIC XX.
 01 WS-FILENAME    PIC X(100).
 01 WS-MOTIF       PIC X(30).
 01 WS-LU          PIC X.
+01 WS-LU-DST      PIC X.
 01 WS-TRX-STATUS  PIC XX.
+*> copies de travail pour le virement : source, destination, source d'origine
+COPY "COMPTE.cpy" REPLACING LEADING ==CPT-== BY ==SRC-==
+                            ==COMPTE-REC== BY ==SRC-REC==.
+COPY "COMPTE.cpy" REPLACING LEADING ==CPT-== BY ==DST-==
+                            ==COMPTE-REC== BY ==DST-REC==.
+COPY "COMPTE.cpy" REPLACING LEADING ==CPT-== BY ==ORG-==
+                            ==COMPTE-REC== BY ==ORG-REC==.
 COPY "TRX.cpy".
 
 LINKAGE SECTION.
@@ -43,9 +59,11 @@ LINKAGE SECTION.
 COPY "COMPTE.cpy" REPLACING LEADING ==CPT-== BY ==LK-CPT-==
                             ==COMPTE-REC== BY ==LK-COMPTE-REC==.
 01 LK-MONTANT     PIC 9(9)V99.
+01 LK-DST         PIC 9(10).
 01 LK-STATUS      PIC XX.
 
-PROCEDURE DIVISION USING LK-ACTION LK-COMPTE-REC LK-MONTANT LK-STATUS.
+PROCEDURE DIVISION USING LK-ACTION LK-COMPTE-REC LK-MONTANT LK-DST
+                         LK-STATUS.
 MAIN-PARA.
     MOVE "data/COMPTES.dat" TO WS-FILENAME
     ACCEPT WS-FILENAME FROM ENVIRONMENT "COMPTES_FILE"
@@ -64,6 +82,7 @@ MAIN-PARA.
         WHEN "U" PERFORM MAJ-COMPTE
         WHEN "D" PERFORM OPERATION
         WHEN "R" PERFORM OPERATION
+        WHEN "V" PERFORM VIREMENT
         WHEN OTHER MOVE "99" TO LK-STATUS
     END-EVALUATE
 
@@ -150,14 +169,102 @@ OPERATION.
 
     PERFORM JOURNALISER.
 
+*> Virement (V) : lit les deux comptes, controle tout, puis ecrit
+VIREMENT.
+    MOVE "00" TO LK-STATUS
+    MOVE SPACES TO WS-MOTIF
+    MOVE "N" TO WS-LU
+    MOVE "N" TO WS-LU-DST
+
+    MOVE LK-CPT-NUM TO CPT-NUM
+    READ F-COMPTES KEY IS CPT-NUM
+    MOVE WS-FS TO WS-FS-SRC
+    IF WS-FS = "00"
+        MOVE "O" TO WS-LU
+        MOVE COMPTE-REC TO SRC-REC
+    END-IF
+
+    MOVE LK-DST TO CPT-NUM
+    READ F-COMPTES KEY IS CPT-NUM
+    MOVE WS-FS TO WS-FS-DST
+    IF WS-FS = "00"
+        MOVE "O" TO WS-LU-DST
+        MOVE COMPTE-REC TO DST-REC
+    END-IF
+
+    EVALUATE TRUE
+        WHEN WS-LU NOT = "O"
+            MOVE WS-FS-SRC TO LK-STATUS
+            MOVE "COMPTE SOURCE INTROUVABLE" TO WS-MOTIF
+        WHEN WS-LU-DST NOT = "O"
+            MOVE WS-FS-DST TO LK-STATUS
+            MOVE "COMPTE DESTINATION INTROUVABLE" TO WS-MOTIF
+        WHEN LK-MONTANT = 0
+            MOVE "91" TO LK-STATUS
+            MOVE "MONTANT INVALIDE" TO WS-MOTIF
+        WHEN LK-CPT-NUM = LK-DST
+            MOVE "95" TO LK-STATUS
+            MOVE "MEME COMPTE" TO WS-MOTIF
+        WHEN NOT SRC-ACTIF OR NOT DST-ACTIF
+            MOVE "92" TO LK-STATUS
+            MOVE "COMPTE NON ACTIF" TO WS-MOTIF
+        WHEN SRC-SOLDE < LK-MONTANT
+            MOVE "93" TO LK-STATUS
+            MOVE "SOLDE INSUFFISANT" TO WS-MOTIF
+    END-EVALUATE
+
+    IF LK-STATUS = "00"
+        MOVE SRC-REC TO ORG-REC
+        ADD LK-MONTANT TO DST-SOLDE
+            ON SIZE ERROR
+                MOVE "94" TO LK-STATUS
+                MOVE "DEPASSEMENT DE CAPACITE" TO WS-MOTIF
+        END-ADD
+    END-IF
+
+    IF LK-STATUS = "00"
+        SUBTRACT LK-MONTANT FROM SRC-SOLDE
+        PERFORM ECRIRE-VIREMENT
+    END-IF
+
+    IF WS-LU = "O"
+        MOVE SRC-REC TO LK-COMPTE-REC
+    END-IF
+
+    PERFORM JOURNALISER.
+
+*> Ecrit source puis destination ; annule la source si la destination echoue
+ECRIRE-VIREMENT.
+    MOVE SRC-REC TO COMPTE-REC
+    REWRITE COMPTE-REC
+    IF WS-FS NOT = "00"
+        MOVE WS-FS TO LK-STATUS
+        MOVE "ECRITURE SOURCE ECHOUEE" TO WS-MOTIF
+        MOVE ORG-REC TO SRC-REC
+    ELSE
+        MOVE DST-REC TO COMPTE-REC
+        REWRITE COMPTE-REC
+        IF WS-FS NOT = "00"
+            MOVE WS-FS TO LK-STATUS
+            MOVE "ECRITURE DESTINATION ANNULEE" TO WS-MOTIF
+            MOVE ORG-REC TO COMPTE-REC
+            REWRITE COMPTE-REC
+            MOVE ORG-REC TO SRC-REC
+        END-IF
+    END-IF.
+
 JOURNALISER.
     INITIALIZE TRX-REC
     MOVE LK-ACTION TO TRX-TYPE
-    IF LK-ACTION = "D"
-        MOVE LK-CPT-NUM TO TRX-CPT-DST
-    ELSE
-        MOVE LK-CPT-NUM TO TRX-CPT-SRC
-    END-IF
+    EVALUATE LK-ACTION
+        WHEN "D"
+            MOVE LK-CPT-NUM TO TRX-CPT-DST
+        WHEN "R"
+            MOVE LK-CPT-NUM TO TRX-CPT-SRC
+        WHEN "V"
+            MOVE LK-CPT-NUM TO TRX-CPT-SRC
+            MOVE LK-DST TO TRX-CPT-DST
+    END-EVALUATE
     MOVE LK-MONTANT TO TRX-MONTANT
     IF LK-STATUS = "00"
         MOVE "A" TO TRX-STATUT
