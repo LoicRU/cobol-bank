@@ -1,0 +1,13 @@
+Titulaire;CLARA
+Compte;0000000003
+Periode_debut;2026-10-01
+Periode_fin;2026-10-31
+Solde_initial;500.00
+date;heure;operation;compte_lie;debit;credit;solde
+2026-10-01;10:15;DEPOT;;;100.00;600.00
+2026-10-02;10:15;RETRAIT;;50.00;;500.00
+Solde_final;500.00
+Total_debits;50.00
+Total_credits;100.00
+Operations;2
+Verification;INCOHERENCE

@@ -28,7 +28,7 @@ verifie "administrateur refuse (78)" "$(api 'connexion 1 1234')" '"statut":"78"'
 verifie "commande inconnue (77)" "$(api 'foo 2 4321')" '"statut":"77"'
 verifie "comptes : solde courant" "$(api 'comptes 2 4321')" '"num":"1000000001","solde":1078.85'
 verifie "comptes : epargne" "$(api 'comptes 2 4321')" '"solde":1002.50,"plafond":0.00,"decouvert":0.00,"type":"E"'
-verifie "comptes : decouvert de Bob" "$(api 'comptes 3 5555')" '"solde":-102.00,"plafond":500.00,"decouvert":200.00'
+verifie "comptes : decouvert de Bob" "$(api 'comptes 3 5555')" '"solde":-103.00,"plafond":500.00,"decouvert":200.00'
 verifie "depot" "$(api 'depot 2 4321 1000000001 10,50')" '"solde":1089.35'
 verifie "retrait" "$(api 'retrait 2 4321 1000000001 9.35')" '"solde":1080.00'
 verifie "virement" "$(api 'virement 2 4321 1000000002 1000000001 20')" '"solde":328.44'
@@ -90,8 +90,8 @@ done
 verifie "config : pas de mode demo" "$(curl -s $URL/api/config)" '"demo": false'
 verifie "page d'accueil" "$(curl -s $URL/)" "<title>cobol-bank</title>"
 verifie "connexion Bob" "$(post connexion '{"id":"3","pin":"5555"}')" '"nom": "Bob"'
-verifie "comptes de Bob" "$(post comptes '{"id":"3","pin":"5555"}')" '"solde": -102.0'
-verifie "depot via HTTP" "$(post depot '{"id":"3","pin":"5555","compte":"1000000003","montant":"102"}')" '"solde": 0.0'
+verifie "comptes de Bob" "$(post comptes '{"id":"3","pin":"5555"}')" '"solde": -103.0'
+verifie "depot via HTTP" "$(post depot '{"id":"3","pin":"5555","compte":"1000000003","montant":"103"}')" '"solde": 0.0'
 verifie "mauvais PIN via HTTP" "$(post comptes '{"id":"3","pin":"1111"}')" '"statut": "81"'
 verifie "parametre avec espace refuse" "$(post depot '{"id":"3","pin":"5555","compte":"1000000003 9","montant":"1"}')" '"statut": "79"'
 verifie "retour a la ligne refuse" "$(post depot '{"id":"3","pin":"5555","compte":"1000000003\n","montant":"1"}')" '"statut": "79"'
@@ -126,6 +126,7 @@ verifie "admin via HTTP : injection refusee" "$(post admin-modifier '{"id":"1","
 verifie "admin via HTTP : client non numerique refuse" "$(post admin-bloquer '{"id":"1","pin":"1234","client":"abc"}')" '"statut": "79"'
 verifie "admin via HTTP : periode invalide refusee" "$(post admin-batch '{"id":"1","pin":"1234","periode":"12"}')" '"statut": "79"'
 verifie "admin via HTTP : batch" "$(post admin-batch '{"id":"1","pin":"1234","periode":"202612"}')" '"periode": "202612"'
+verifie "admin via HTTP : batch, agios au resume" "$(post admin-batch '{"id":"1","pin":"1234","periode":"202701"}')" '"agios": '
 verifie "admin via HTTP : batch deja traite (71)" "$(post admin-batch '{"id":"1","pin":"1234","periode":"202612"}')" '"statut": "71"'
 absent=$(grep -c "5555\|1234" $T/WEB_serveur.log)
 if [ "$absent" -eq 0 ]; then echo "  PASS le PIN n'apparait pas dans les logs"

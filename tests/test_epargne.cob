@@ -1,11 +1,13 @@
 *> test_epargne.cob - traitement mensuel : comptes epargne et decouvert
 *> Fichiers temporaires dans tests/. Periode 202701, taux courant 1.50 %,
-*> taux epargne 3.00 %, frais 2.00.
+*> taux epargne 3.00 %, frais 2.00, agios 12.00 % (valeur par defaut).
 *>   1 courant  1000.00             -> +1.25 -2.00 = 999.25
 *>   2 epargne  1000.00             -> +2.50, aucun frais = 1002.50
-*>   3 courant  -100.00 (decouv 200) -> pas d'interets, frais = -102.00
-*>   4 courant  -199.00 (decouv 200) -> frais refuses (-201 < -200)
-*>   5 courant  -100.00 (decouv 0)   -> frais refuses
+*>   3 courant  -100.00 (decouv 200) -> pas d'interets, frais -102.00,
+*>                                       agios 1.00 = -103.00
+*>   4 courant  -199.00 (decouv 200) -> frais refuses (-201 < -200),
+*>                                       agios 1.99 = -200.99 (au-dela du decouvert)
+*>   5 courant  -100.00 (decouv 0)   -> frais refuses, agios 1.00 = -101.00
 *>   6 epargne     0.00             -> rien
 IDENTIFICATION DIVISION.
 PROGRAM-ID. TEST-EPARGNE.
@@ -44,6 +46,8 @@ COPY "BATCH.cpy" REPLACING LEADING ==BAT-== BY ==RS-==
 01 WS-NB-I-A       PIC 9(5).
 01 WS-NB-EPG       PIC 9(5).
 01 WS-SOLDE-F3     PIC S9(9)V99.
+01 WS-NB-A-A       PIC 9(5).
+01 WS-SOLDE-A3     PIC S9(9)V99.
 
 PROCEDURE DIVISION.
 MAIN-PARA.
@@ -107,16 +111,16 @@ MAIN-PARA.
     MOVE "epargne : interets 3.00 %, aucun frais" TO WS-LIBELLE
     PERFORM VERIF-SOLDE
     MOVE 3 TO WS-NUM
-    MOVE -102.00 TO WS-SOLDE-ATT
-    MOVE "solde negatif : frais, pas d'interets" TO WS-LIBELLE
+    MOVE -103.00 TO WS-SOLDE-ATT
+    MOVE "solde negatif : frais, agios, pas d'interets" TO WS-LIBELLE
     PERFORM VERIF-SOLDE
     MOVE 4 TO WS-NUM
-    MOVE -199.00 TO WS-SOLDE-ATT
-    MOVE "frais refuses : depasserait le decouvert" TO WS-LIBELLE
+    MOVE -200.99 TO WS-SOLDE-ATT
+    MOVE "frais refuses, agios au-dela du decouvert" TO WS-LIBELLE
     PERFORM VERIF-SOLDE
     MOVE 5 TO WS-NUM
-    MOVE -100.00 TO WS-SOLDE-ATT
-    MOVE "frais refuses : aucun decouvert autorise" TO WS-LIBELLE
+    MOVE -101.00 TO WS-SOLDE-ATT
+    MOVE "frais refuses, agios sans decouvert" TO WS-LIBELLE
     PERFORM VERIF-SOLDE
     MOVE 6 TO WS-NUM
     MOVE 0 TO WS-SOLDE-ATT
@@ -124,8 +128,8 @@ MAIN-PARA.
     PERFORM VERIF-SOLDE
 
     PERFORM LIRE-HISTORIQUE
-    MOVE "historique : 6 lignes" TO WS-LIBELLE
-    IF WS-NB-TRX = 6
+    MOVE "historique : 9 lignes" TO WS-LIBELLE
+    IF WS-NB-TRX = 9
         DISPLAY "PASS " WS-LIBELLE
     ELSE
         DISPLAY "FAIL " WS-LIBELLE " (" WS-NB-TRX ")"
@@ -138,6 +142,14 @@ MAIN-PARA.
     ELSE
         DISPLAY "FAIL " WS-LIBELLE " (" WS-NB-I-A "/" WS-NB-F-A "/"
                 WS-NB-F-R ")"
+        ADD 1 TO WS-NB-ECHECS
+    END-IF
+    MOVE "historique : 3 agios (comptes 3, 4, 5), solde apres -103.00"
+        TO WS-LIBELLE
+    IF WS-NB-A-A = 3 AND WS-SOLDE-A3 = -103.00
+        DISPLAY "PASS " WS-LIBELLE
+    ELSE
+        DISPLAY "FAIL " WS-LIBELLE " (" WS-NB-A-A ")"
         ADD 1 TO WS-NB-ECHECS
     END-IF
     MOVE "historique : aucune ligne de frais sur l'epargne" TO WS-LIBELLE
@@ -191,6 +203,7 @@ VERIF-SOLDE.
 
 LIRE-HISTORIQUE.
     MOVE 0 TO WS-NB-TRX WS-NB-F-A WS-NB-F-R WS-NB-I-A WS-NB-EPG
+              WS-NB-A-A
     MOVE "N" TO WS-FIN
     OPEN INPUT F-TRX
     IF WS-FS-TRX = "00"
@@ -201,6 +214,12 @@ LIRE-HISTORIQUE.
                     ADD 1 TO WS-NB-TRX
                     IF FT-TYPE = "I" AND FT-STATUT = "A"
                         ADD 1 TO WS-NB-I-A
+                    END-IF
+                    IF FT-TYPE = "A" AND FT-STATUT = "A"
+                        ADD 1 TO WS-NB-A-A
+                    END-IF
+                    IF FT-TYPE = "A" AND FT-CPT-SRC = 3
+                        MOVE FT-SOLDE-SRC TO WS-SOLDE-A3
                     END-IF
                     IF FT-TYPE = "F" AND FT-STATUT = "A"
                         ADD 1 TO WS-NB-F-A

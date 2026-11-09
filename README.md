@@ -10,7 +10,7 @@ Mini core-banking en **GnuCOBOL** : fichiers indexés, menu console, authentific
 - **Comptes** : comptes courants (avec découvert autorisé optionnel) et comptes épargne, statuts actif / gelé / clos, plafond journalier par compte, modification par l'administrateur.
 - **Opérations** : dépôt, retrait, virement atomique ; chaque tentative (acceptée ou refusée, avec motif) est écrite dans l'historique.
 - **Fraude** : plafond journalier de sorties (refus) et montant anormal par rapport à la moyenne du compte (alerte), journal d'alertes consultable par l'administrateur.
-- **Batch mensuel** : intérêts (taux propre à l'épargne) et frais de tenue (comptes courants seulement), rejouable sans doublon (une période déjà traitée est refusée).
+- **Batch mensuel** : intérêts (taux propre à l'épargne), frais de tenue et agios sur découvert (comptes courants seulement), rejouable sans doublon (une période déjà traitée est refusée).
 - **Inscription et ouverture de comptes en libre-service** : un visiteur crée son propre client (nom + PIN), puis chaque client s'ouvre jusqu'à 5 comptes (courant ou épargne), en console comme sur le web.
 - **Interface web** (client et administrateur) : inscription, ouverture de compte, consultation des comptes, dépôt, retrait, virement et historique dans le navigateur ; l'administrateur y gère clients, comptes, alertes et batch. Un petit serveur Python appelle le COBOL.
 - **Relevés** : fichier texte formaté ou export CSV sur une période, avec contrôle de cohérence (solde initial + crédits − débits = solde final).
@@ -239,8 +239,9 @@ Le menu de départ propose aussi `2 Créer mon compte client` (inscription libre
 | Virement émis | oui (jusqu'au découvert) | seulement vers un **courant du même client** (sinon code 90) |
 | Intérêts mensuels | `TAUX_ANNUEL_PCT`, sur solde positif | `TAUX_EPARGNE_PCT`, sur solde positif |
 | Frais de tenue | oui, tant que `solde − frais ≥ −découvert` | aucun |
+| Agios mensuels | `TAUX_AGIOS_PCT`, sur solde négatif | aucun |
 
-Le découvert est un plafond de solde négatif : aucun agio n'est calculé. Les soldes négatifs apparaissent avec un signe `-` dans les menus, l'historique et les relevés. Le menu admin `8` modifie le plafond journalier, le découvert (courant seulement) et le statut (actif, gelé, clos) d'un compte ; une saisie vide laisse la valeur actuelle.
+Le découvert est un plafond de solde négatif. Chaque mois, le batch prélève des agios sur un compte courant à solde négatif : |solde d'ouverture| × `TAUX_AGIOS_PCT` / 12, arrondis au centime (ligne de type `A`, « AGIOS » sur les relevés). Ils sont prélevés même si le solde passe sous le découvert autorisé, contrairement aux frais de tenue. Exemple : −100,00 donne 1,00 d'agios à 12 %. Les soldes négatifs apparaissent avec un signe `-` dans les menus, l'historique et les relevés. Le menu admin `8` modifie le plafond journalier, le découvert (courant seulement) et le statut (actif, gelé, clos) d'un compte ; une saisie vide laisse la valeur actuelle.
 
 Un client n'accède qu'à ses propres comptes (code 74 sinon). Le rôle administrateur est vérifié avant chaque action réservée.
 
@@ -295,6 +296,7 @@ Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexé
 | `MAX_COMPTES_CLIENT` | 5 | comptes qu'un client peut ouvrir lui-même (l'administrateur n'est pas limité) |
 | `MAX_INSCRIPTIONS_HEURE` | 20 | inscriptions libres par heure ; au-delà, refus (code 85) et alerte `INSCRIPTIONS` |
 | `FRAIS_TENUE` | 2.00 | frais mensuels de tenue de compte |
+| `TAUX_AGIOS_PCT` | 12.00 | taux annuel des agios sur solde négatif (%) |
 | `MAX_ECHECS_PIN` | 3 | échecs de PIN avant blocage |
 | `ALERTE_ECHECS` | 2 | échecs de PIN consécutifs déclenchant l'alerte `ECHECS_RAPIDES` (sans blocage) |
 | `FENETRE_ECHECS_SEC` | 300 | durée (secondes) dans laquelle ces échecs doivent survenir |
@@ -312,7 +314,7 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 | `test_auth` | création, PIN, blocage, déblocage, changement de PIN, inscription libre (validations, limite horaire, alerte) |
 | `test_batch` | intérêts, frais, arrondis, dépassement, rejeu, période interrompue |
 | `test_releve` | périodes, soldes (y compris négatifs), cohérence, droits, export CSV, bout en bout |
-| `test_epargne` | batch : intérêts d'épargne, pas de frais sur l'épargne, frais limités par le découvert |
+| `test_epargne` | batch : intérêts d'épargne, pas de frais sur l'épargne, frais limités par le découvert, agios sur soldes négatifs |
 | `test_trx` | numérotation de l'historique |
 | `test_menu.sh` | scénario complet par saisies redirigées (client, admin, blocage, batch, connexion par nom) |
 | `test_web.sh` | `bin/api` et serveur HTTP : inscription, ouverture de compte, connexion, comptes, opérations, commandes administrateur (rôles, blocage, modification, batch), refus, injections de paramètres, PIN absent des logs |
@@ -324,5 +326,5 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 - PIN pédagogique (voir l'avertissement en tête), fichiers non chiffrés.
 - Pas de devise ni de fuseau : une seule monnaie, date et heure du système.
 - Inscription libre sans vérification d'identité (limitée seulement par `MAX_INSCRIPTIONS_HEURE`) ; un nouveau client peut porter le même nom qu'un autre.
-- Pas d'agios : un solde négatif ne produit pas d'intérêts débiteurs.
+- Agios : un seul taux, calculé sur le solde d'ouverture de la période (pas de calcul au jour le jour).
 - Le relevé est un fichier texte ; il n'y a pas d'export PDF.

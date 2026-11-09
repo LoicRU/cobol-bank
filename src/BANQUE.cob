@@ -919,6 +919,10 @@ ADMIN-BATCH.
             DISPLAY "Frais preleves     : " WS-ED-NB
             MOVE BAT-TOT-FRAIS TO WS-ED2
             DISPLAY "Total frais        : " WS-ED2
+            MOVE BAT-NB-AGIOS TO WS-ED-NB
+            DISPLAY "Agios preleves     : " WS-ED-NB
+            MOVE BAT-TOT-AGIOS TO WS-ED2
+            DISPLAY "Total agios        : " WS-ED2
             MOVE BAT-NB-FRAIS-REFUSES TO WS-ED-NB
             DISPLAY "Frais refuses      : " WS-ED-NB
             MOVE BAT-NB-ANOMALIES TO WS-ED-NB

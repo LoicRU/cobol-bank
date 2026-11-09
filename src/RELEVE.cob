@@ -308,15 +308,16 @@ EXAMINER-LIGNE.
                 END-IF
             WHEN "R"
             WHEN "F"
+            WHEN "A"
                 IF TRX-CPT-SRC = LK-CPT-NUM
                     MOVE "O" TO WS-CONCERNE
                     MOVE TRX-MONTANT TO WS-DEBIT
                     MOVE TRX-SOLDE-SRC TO WS-APRES
-                    IF TRX-TYPE = "R"
-                        MOVE "RETRAIT" TO WS-LIBELLE
-                    ELSE
-                        MOVE "FRAIS DE TENUE" TO WS-LIBELLE
-                    END-IF
+                    EVALUATE TRX-TYPE
+                        WHEN "R" MOVE "RETRAIT" TO WS-LIBELLE
+                        WHEN "F" MOVE "FRAIS DE TENUE" TO WS-LIBELLE
+                        WHEN OTHER MOVE "AGIOS" TO WS-LIBELLE
+                    END-EVALUATE
                 END-IF
             WHEN "V"
                 IF TRX-CPT-SRC = LK-CPT-NUM

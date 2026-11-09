@@ -51,7 +51,7 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - Virements vers des banques externes (SEPA, SWIFT).
 - Multi-devises.
 - Accès concurrent de plusieurs utilisateurs simultanés.
-- Cartes bancaires, prêts, comptes épargne réglementés (plafonds légaux, livrets défiscalisés), agios sur découvert.
+- Cartes bancaires, prêts, comptes épargne réglementés (plafonds légaux, livrets défiscalisés).
 
 ---
 
@@ -98,8 +98,9 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - **F-BAT-1** : un programme batch parcourt tous les comptes actifs.
 - **F-BAT-2** : il crédite les intérêts mensuels selon le taux paramétré (un taux pour les comptes courants, un taux pour les comptes épargne), sur les soldes positifs uniquement.
 - **F-BAT-3** : il débite les frais de tenue de compte paramétrés sur les comptes courants, tant que le solde reste supérieur ou égal à `−découvert autorisé` ; les comptes épargne n'en paient pas.
-- **F-BAT-4** : chaque écriture est enregistrée dans l'historique avec un type dédié (intérêt, frais).
-- **F-BAT-5** : il produit un rapport de fin de traitement (nombre de comptes traités, total des intérêts, total des frais, anomalies).
+- **F-BAT-7** *(V1.1)* : il prélève des agios sur les comptes courants à solde négatif : |solde d'ouverture| × taux annuel des agios / 12, arrondis au centime, même au-delà du découvert autorisé ; les comptes épargne n'en paient pas.
+- **F-BAT-4** : chaque écriture est enregistrée dans l'historique avec un type dédié (intérêt, frais, agios).
+- **F-BAT-5** : il produit un rapport de fin de traitement (nombre de comptes traités, total des intérêts, total des frais, total des agios, anomalies).
 - **F-BAT-6** : le batch est rejouable sans doublon : un second lancement sur la même période est refusé.
 
 ### 4.5 Détection de fraude basique
@@ -222,6 +223,7 @@ Les valeurs ci-dessous sont des **valeurs par défaut proposées**, toutes modif
 | Inscriptions libres par heure | 20 |
 | Taux d'intérêt annuel | 1,50 % (appliqué au douzième chaque mois) |
 | Frais de tenue de compte mensuels | 2,00 |
+| Taux annuel des agios sur solde négatif | 12,00 % |
 | Seuil d'alerte « montant anormal » | 5 fois la moyenne des opérations du compte |
 | Montant minimal d'une opération | 0,01 |
 
@@ -286,4 +288,4 @@ intérêt = solde × taux annuel ÷ 12      (arrondi au centime, solde > 0 uniqu
 - Virements programmés.
 - Règles de fraude plus riches (géolocalisation simulée, fréquence, horaires).
 - Migration du stockage vers une base SQL.
-- Agios (intérêts débiteurs) sur découvert, comptes épargne plafonnés.
+- Agios au jour le jour, par tranche de découvert ; comptes épargne plafonnés.

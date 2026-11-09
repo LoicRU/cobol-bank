@@ -20,7 +20,11 @@ verifie "releve CSV genere" $DEMO_DIR/reports/RELEVE_1000000001_${AUJ}_${AUJ}.cs
 verifie "releve coherent" $DEMO_DIR/reports/RELEVE_1000000001_${AUJ}_${AUJ}.txt "Verification : OK"
 verifie "rapport du batch genere" $DEMO_DIR/reports/BATCH_$(date +%Y%m).txt "PERIODE"
 
+verifie "rapport du batch : agios" $DEMO_DIR/reports/BATCH_$(date +%Y%m).txt "Agios preleves (12.00 %) :       1 compte(s), total           1.00"
 # soldes apres le batch (taux 1.50 %, frais 2.00)
+printf '%s\n' 1 Bob 5555 6 1000000003 $AUJ $AUJ 1 0 0 | sh $T/demo.sh run > /dev/null 2>&1
+verifie "releve de Bob : ligne AGIOS" $DEMO_DIR/reports/RELEVE_1000000003_${AUJ}_${AUJ}.txt "AGIOS                                 1.00                      -103.00"
+verifie "releve de Bob : coherent" $DEMO_DIR/reports/RELEVE_1000000003_${AUJ}_${AUJ}.txt "Verification : OK"
 printf '%s\n' 1 Alice 4321 1 0 0 | sh $T/demo.sh run > $T/DEMO_alice.txt 2>&1
 printf '%s\n' 1 Bob 5555 1 0 0 | sh $T/demo.sh run > $T/DEMO_bob.txt 2>&1
 printf '%s\n' 1 Alice 4321 3 1000000005 5 0 0 | sh $T/demo.sh run > $T/DEMO_epargne.txt 2>&1
@@ -30,7 +34,7 @@ printf '%s\n' 1 1 1234 4 0 0 | sh $T/demo.sh run > $T/DEMO_admin.txt 2>&1
 echo "DEMO : contenu"
 verifie "Alice compte 1 : 1078.85" $T/DEMO_alice.txt "Compte 1000000001  solde       1078.85"
 verifie "Alice compte 2 : 348.44" $T/DEMO_alice.txt "Compte 1000000002  solde        348.44"
-verifie "Bob compte 3 : -102.00 (decouvert)" $T/DEMO_bob.txt "Compte 1000000003  solde       -102.00"
+verifie "Bob compte 3 : -103.00 (decouvert, agios)" $T/DEMO_bob.txt "Compte 1000000003  solde       -103.00"
 verifie "Bob : decouvert affiche" $T/DEMO_bob.txt "decouvert autorise       200.00"
 verifie "Alice epargne : 1002.50 (interets 3 %, sans frais)" $T/DEMO_alice.txt "Compte 1000000005  solde       1002.50"
 verifie "Alice epargne : retrait refuse" $T/DEMO_epargne.txt "interdite sur un compte epargne"

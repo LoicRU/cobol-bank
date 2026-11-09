@@ -155,7 +155,7 @@ table.g th:last-child, table.g td:last-child { text-align: right; }
 
     <section class="carte">
       <h2>Traitement mensuel</h2>
-      <p class="vide">Intérêts et frais de tenue de compte. Une période ne se traite qu'une fois.</p>
+      <p class="vide">Intérêts, frais de tenue et agios sur les soldes négatifs. Une période ne se traite qu'une fois.</p>
       <div class="ligne">
         <div><label for="b-periode">Période AAAAMM (vide = mois courant)</label>
           <input id="b-periode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"></div>
@@ -245,7 +245,7 @@ const MESSAGES = {
   "95": "Virement vers le même compte.", "96": "Plafond journalier dépassé.",
   "98": "Fait, mais historique non écrit.", "99": "Erreur technique."
 };
-const TYPES = { D: "Dépôt", R: "Retrait", V: "Virement", I: "Intérêts", F: "Frais", O: "Ouverture du compte" };
+const TYPES = { D: "Dépôt", R: "Retrait", V: "Virement", I: "Intérêts", F: "Frais", A: "Agios", O: "Ouverture du compte" };
 const $ = (id) => document.getElementById(id);
 
 let session = null;       // { id, pin, nom, admin } : en mémoire seulement
@@ -505,9 +505,10 @@ $("b-lancer").addEventListener("click", async () => {
   $("b-resultat").replaceChildren();
   if (!r.ok) { erreur(r.statut); return; }
   message("Traitement de la période " + r.periode + " terminé.", true);
-  tableau($("b-resultat"), ["Comptes actifs", "Intérêts", "Total intérêts", "Frais", "Total frais", "Frais refusés", "Anomalies"],
+  tableau($("b-resultat"), ["Comptes actifs", "Intérêts", "Total intérêts", "Frais", "Total frais", "Frais refusés", "Agios", "Total agios", "Anomalies"],
     [[String(r.actifs), String(r.interets), euro(r.total_interets) + " €", String(r.frais),
-      euro(r.total_frais) + " €", String(r.refuses), String(r.anomalies)]], "");
+      euro(r.total_frais) + " €", String(r.refuses), String(r.agios), euro(r.total_agios) + " €",
+      String(r.anomalies)]], "");
   chargerAdmin();
 });
 

@@ -1,0 +1,16 @@
+Titulaire;ALICE
+Compte;0000000001
+Periode_debut;2026-10-01
+Periode_fin;2026-10-31
+Solde_initial;500.00
+date;heure;operation;compte_lie;debit;credit;solde
+2026-10-01;10:15;DEPOT;;;100.00;600.00
+2026-10-05;10:15;RETRAIT;;50.00;;550.00
+2026-10-10;10:15;VIREMENT EMIS;0000000002;80.00;;470.00
+2026-10-15;10:15;VIREMENT RECU;0000000002;;30.00;500.00
+2026-10-20;10:15;FRAIS DE TENUE;;2.00;;498.00
+Solde_final;498.00
+Total_debits;132.00
+Total_credits;130.00
+Operations;5
+Verification;OK

@@ -15,6 +15,9 @@
 *>      seulement si solde > 0 et interets >= 0.01 (type I dans l'historique)
 *>   2. frais de tenue preleves (type F) si le solde le permet, jamais de
 *>      solde negatif : sinon une ligne F refusee est ecrite
+*>   3. agios (type A) sur un compte courant a solde negatif : |solde| x
+*>      TAUX_AGIOS_PCT / 12, calcules sur le solde d'ouverture de la periode,
+*>      preleves meme au-dela du decouvert autorise ; jamais sur l'epargne
 *>   Un credit qui depasserait la capacite du solde est refuse (ligne I
 *>   refusee) et compte comme anomalie.
 *> Rejouable sans doublon : chaque periode est enregistree dans le fichier de
@@ -79,6 +82,13 @@ COPY "PARAMS.cpy".
 01 WS-INT-MOTIF        PIC X(30).
 01 WS-FRAIS-STATUT     PIC X.
 01 WS-FRAIS-MOTIF      PIC X(30).
+01 WS-TAUX-AGIOS       PIC 9V9999.
+01 WS-AGIOS            PIC 9(9)V99.
+01 WS-AGIOS-STATUT     PIC X.
+01 WS-AGIOS-MOTIF      PIC X(30).
+01 WS-SOLDE-OUV        PIC S9(9)V99.
+01 WS-SOLDE-APRES-FRAIS PIC S9(9)V99.
+01 WS-SOLDE-MIN        PIC S9(9)V99 VALUE -999999999.99.
 01 WS-MODIFIE          PIC X.
 01 WS-FIN              PIC X.
 01 WS-LIGNE            PIC X(80).
@@ -116,6 +126,7 @@ MAIN-PARA.
     END-IF
     MOVE PRM-TAUX-ANNUEL TO WS-TAUX-COURANT
     MOVE PRM-TAUX-EPARGNE TO WS-TAUX-EPARGNE
+    MOVE PRM-TAUX-AGIOS TO WS-TAUX-AGIOS
     MOVE WS-TAUX-COURANT TO WS-TAUX
     MOVE PRM-FRAIS-TENUE TO WS-FRAIS
 
@@ -211,6 +222,7 @@ TRAITER-UN-COMPTE.
     IF CPT-ACTIF
         ADD 1 TO RES-NB-ACTIFS
         MOVE "N" TO WS-MODIFIE
+        MOVE CPT-SOLDE TO WS-SOLDE-OUV
         *> taux selon le type de compte ; l'epargne ne paie pas de frais
         IF CPT-EPARGNE
             MOVE WS-TAUX-EPARGNE TO WS-TAUX
@@ -223,6 +235,8 @@ TRAITER-UN-COMPTE.
         ELSE
             PERFORM CALCULER-FRAIS
         END-IF
+        MOVE CPT-SOLDE TO WS-SOLDE-APRES-FRAIS
+        PERFORM CALCULER-AGIOS
         IF WS-MODIFIE = "O"
             REWRITE COMPTE-REC
             IF WS-FS NOT = "00"
@@ -234,6 +248,9 @@ TRAITER-UN-COMPTE.
         END-IF
         IF LK-STATUS = "00"
             PERFORM JOURNALISER-FRAIS
+        END-IF
+        IF LK-STATUS = "00"
+            PERFORM JOURNALISER-AGIOS
         END-IF
     END-IF.
 
@@ -279,6 +296,50 @@ CALCULER-FRAIS.
         ADD 1 TO RES-NB-FRAIS-REFUSES
     END-IF.
 
+*> WS-AGIOS-STATUT : N aucun, A preleves, R refuses (depassement de capacite)
+CALCULER-AGIOS.
+    MOVE "N" TO WS-AGIOS-STATUT
+    MOVE 0 TO WS-AGIOS
+    IF NOT CPT-EPARGNE AND WS-SOLDE-OUV < 0
+        COMPUTE WS-AGIOS ROUNDED = (0 - WS-SOLDE-OUV) * WS-TAUX-AGIOS / 12
+        IF WS-AGIOS > 0
+            COMPUTE WS-APRES-FRAIS = CPT-SOLDE - WS-AGIOS
+            IF WS-APRES-FRAIS < WS-SOLDE-MIN
+                MOVE "R" TO WS-AGIOS-STATUT
+                MOVE "DEPASSEMENT DE CAPACITE" TO WS-AGIOS-MOTIF
+                ADD 1 TO RES-NB-ANOMALIES
+            ELSE
+                SUBTRACT WS-AGIOS FROM CPT-SOLDE
+                MOVE "A" TO WS-AGIOS-STATUT
+                MOVE "O" TO WS-MODIFIE
+                ADD 1 TO RES-NB-AGIOS
+                ADD WS-AGIOS TO RES-TOT-AGIOS
+            END-IF
+        END-IF
+    END-IF.
+
+JOURNALISER-AGIOS.
+    IF WS-AGIOS-STATUT = "N"
+        EXIT PARAGRAPH
+    END-IF
+    INITIALIZE TRX-REC
+    MOVE "A" TO TRX-TYPE
+    MOVE CPT-NUM TO TRX-CPT-SRC
+    MOVE CPT-SOLDE TO TRX-SOLDE-SRC
+    MOVE WS-AGIOS TO TRX-MONTANT
+    MOVE WS-AGIOS-STATUT TO TRX-STATUT
+    IF WS-AGIOS-STATUT = "A"
+        STRING "AGIOS " DELIMITED BY SIZE
+               LK-PERIODE DELIMITED BY SIZE
+               INTO TRX-MOTIF
+    ELSE
+        MOVE WS-AGIOS-MOTIF TO TRX-MOTIF
+    END-IF
+    CALL "TRX" USING TRX-REC WS-TRX-STATUS
+    IF WS-TRX-STATUS NOT = "00"
+        MOVE WS-TRX-STATUS TO LK-STATUS
+    END-IF.
+
 JOURNALISER-INTERETS.
     IF WS-INT-STATUT NOT = "N"
         INITIALIZE TRX-REC
@@ -307,7 +368,7 @@ JOURNALISER-FRAIS.
     INITIALIZE TRX-REC
     MOVE "F" TO TRX-TYPE
     MOVE CPT-NUM TO TRX-CPT-SRC
-    MOVE CPT-SOLDE TO TRX-SOLDE-SRC
+    MOVE WS-SOLDE-APRES-FRAIS TO TRX-SOLDE-SRC
     MOVE WS-FRAIS TO TRX-MONTANT
     MOVE WS-FRAIS-STATUT TO TRX-STATUT
     IF WS-FRAIS-STATUT = "A"
@@ -424,6 +485,19 @@ ECRIRE-RAPPORT.
                WS-E-NB DELIMITED BY SIZE INTO WS-LIGNE
         PERFORM ECRIRE-LIGNE
 
+        MOVE RES-NB-AGIOS TO WS-E-NB
+        MOVE RES-TOT-AGIOS TO WS-E-MT
+        COMPUTE WS-TAUX-PCT = WS-TAUX-AGIOS * 100
+        MOVE WS-TAUX-PCT TO WS-E-TAUX
+        MOVE SPACES TO WS-LIGNE
+        STRING "Agios preleves (" DELIMITED BY SIZE
+               WS-E-TAUX DELIMITED BY SIZE
+               " %) : " DELIMITED BY SIZE
+               WS-E-NB DELIMITED BY SIZE
+               " compte(s), total " DELIMITED BY SIZE
+               WS-E-MT DELIMITED BY SIZE INTO WS-LIGNE
+        PERFORM ECRIRE-LIGNE
+
         MOVE RES-NB-ANOMALIES TO WS-E-NB
         MOVE SPACES TO WS-LIGNE
         STRING "Anomalies (depassement de capacite) : "
@@ -432,6 +506,7 @@ ECRIRE-RAPPORT.
         PERFORM ECRIRE-LIGNE
 
         COMPUTE WS-VARIATION = RES-TOT-INTERETS - RES-TOT-FRAIS
+                               - RES-TOT-AGIOS
         MOVE WS-VARIATION TO WS-E-VAR
         MOVE SPACES TO WS-LIGNE
         STRING "Variation totale des soldes : " DELIMITED BY SIZE
