@@ -17,3 +17,8 @@
 *> sert a reperer des echecs rapproches. Sans signification si CLI-ECHECS = 0.
    05 CLI-SERIE-DATE  PIC 9(8).
    05 CLI-SERIE-HEURE PIC 9(6).
+*> Date (AAAAMMJJ) et heure (HHMMSS) d'inscription libre (action N d'AUTH) ;
+*> 0 pour un client cree par un administrateur. Sert a limiter le nombre
+*> d'inscriptions par heure.
+   05 CLI-DATE-CREA   PIC 9(8).
+   05 CLI-HEURE-CREA  PIC 9(6).

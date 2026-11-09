@@ -6,6 +6,8 @@
 *>     "C" controle d'une sortie d'argent (retrait ou virement sortant) du
 *>         compte LK-CPT-NUM pour LK-MONTANT, avec le plafond LK-PLAFOND
 *>     "B" alerte de blocage de PIN pour le client LK-ID-CLIENT
+*>     "E" alerte d'echecs de PIN rapproches (client LK-ID-CLIENT)
+*>     "I" alerte : limite horaire d'inscriptions libres atteinte
 *>   LK-STATUS :
 *>     00 rien a signaler            96 plafond journalier depasse (refuser)
 *>     97 montant anormal : alerte ecrite, l'operation reste autorisee
@@ -85,6 +87,7 @@ MAIN-PARA.
         WHEN "C" PERFORM CONTROLER-SORTIE
         WHEN "B" PERFORM ALERTE-BLOCAGE
         WHEN "E" PERFORM ALERTE-ECHECS
+        WHEN "I" PERFORM ALERTE-INSCRIPTIONS
         WHEN OTHER MOVE "99" TO LK-STATUS
     END-EVALUATE
     GOBACK.
@@ -131,6 +134,12 @@ CONTROLER-SORTIE.
 ALERTE-ECHECS.
     MOVE "ECHECS_RAPIDES" TO WS-REGLE
     MOVE "ECHECS PIN RAPPROCHES" TO WS-DETAIL
+    PERFORM ECRIRE-ALERTE
+    MOVE WS-ALR-STATUS TO LK-STATUS.
+
+ALERTE-INSCRIPTIONS.
+    MOVE "INSCRIPTIONS" TO WS-REGLE
+    MOVE "LIMITE HORAIRE ATTEINTE" TO WS-DETAIL
     PERFORM ECRIRE-ALERTE
     MOVE WS-ALR-STATUS TO LK-STATUS.
 

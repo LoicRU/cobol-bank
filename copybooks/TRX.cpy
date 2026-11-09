@@ -1,5 +1,6 @@
 *> TRX.cpy - une ligne de l'historique des transactions
-*> TRX-TYPE   : D depot, R retrait, V virement, I interet, F frais
+*> TRX-TYPE   : D depot, R retrait, V virement, I interet, F frais,
+*>              O ouverture de compte (montant 0, destination = le compte)
 *> TRX-STATUT : A accepte, R refuse
 *> Depot : source = 0. Retrait : destination = 0.
 *> TRX-SOLDE-SRC / TRX-SOLDE-DST : solde du compte source / destination

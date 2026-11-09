@@ -51,6 +51,7 @@ COPY "TRX.cpy" REPLACING LEADING ==TRX-== BY ==LT-==.
 01 WS-DST         PIC 9(10) VALUE 0.
 01 WS-SOLDE-DST-ATT PIC S9(9)V99.
 01 WS-NUM-SAVE    PIC 9(10).
+01 WS-NUM-NEW     PIC 9(10).
 01 WS-SOLDE-SRC-SAVE PIC S9(9)V99.
 01 WS-SKIP-DST    PIC X VALUE "N".
 01 WS-SOMME       PIC S9(10)V99.
@@ -581,6 +582,9 @@ MAIN-PARA.
     MOVE "A" TO WS-STAT-ATT
     PERFORM CAS-VIR
 
+    *> --- ouverture d'un compte par un client (action N) ---
+    PERFORM TEST-OUVERTURE
+
     CALL "CBL_DELETE_FILE" USING "tests/COMPTES_TEST.dat"
     CALL "CBL_DELETE_FILE" USING "tests/TRX_TEST.dat"
     CALL "CBL_DELETE_FILE" USING "tests/ALERTES_TEST.dat"
@@ -592,6 +596,86 @@ MAIN-PARA.
         MOVE 1 TO RETURN-CODE
     END-IF
     STOP RUN.
+
+*> Action N : numero attribue, solde 0, plafond par defaut, ligne "O",
+*> limite de comptes par client (5 par defaut), type invalide
+TEST-OUVERTURE.
+    MOVE "N" TO WS-ACTION
+    MOVE 0 TO WS-MONTANT WS-DST
+    INITIALIZE COMPTE-REC
+    MOVE 7000 TO CPT-ID-CLIENT
+    MOVE "E" TO CPT-TYPE
+    CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
+    MOVE "00" TO WS-ATTENDU
+    MOVE "ouverture : compte epargne" TO WS-LIBELLE
+    PERFORM VERIFIER
+    MOVE CPT-NUM TO WS-NUM-NEW
+    IF CPT-NUM > 23 AND CPT-SOLDE = 0 AND CPT-PLAFOND = 0
+       AND CPT-DECOUVERT = 0 AND CPT-STATUT = "A" AND CPT-TYPE = "E"
+       AND CPT-ID-CLIENT = 7000
+        DISPLAY "  PASS compte " CPT-NUM " : solde 0, actif, epargne"
+    ELSE
+        DISPLAY "  FAIL compte ouvert : " CPT-NUM " " CPT-TYPE
+        ADD 1 TO WS-NB-ECHECS
+    END-IF
+    MOVE WS-NUM-NEW TO WS-NUM
+    MOVE 0 TO WS-SOLDE-ATT
+    PERFORM RELIRE-SOLDE
+    *> la ligne d'historique "O"
+    ADD 1 TO WS-NB-ATT
+    MOVE "O" TO WS-TYPE-ATT
+    MOVE "A" TO WS-STAT-ATT
+    MOVE 0 TO WS-MONT-ATT
+    PERFORM VERIF-TRX
+    *> numeros suivants
+    MOVE "N" TO WS-ACTION
+    INITIALIZE COMPTE-REC
+    MOVE 7000 TO CPT-ID-CLIENT
+    MOVE "C" TO CPT-TYPE
+    CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
+    MOVE "ouverture : compte courant suivant" TO WS-LIBELLE
+    PERFORM VERIFIER
+    IF CPT-NUM = WS-NUM-NEW + 1 AND CPT-TYPE = "C"
+        DISPLAY "  PASS numero suivant " CPT-NUM
+    ELSE
+        DISPLAY "  FAIL numero suivant " CPT-NUM
+        ADD 1 TO WS-NB-ECHECS
+    END-IF
+    ADD 1 TO WS-NB-ATT
+    PERFORM VERIF-TRX
+    *> 3 de plus : 5 comptes au total, puis refus
+    PERFORM 3 TIMES
+        MOVE "N" TO WS-ACTION
+        INITIALIZE COMPTE-REC
+        MOVE 7000 TO CPT-ID-CLIENT
+        MOVE "C" TO CPT-TYPE
+        CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST
+                            WS-STATUS
+        MOVE "ouverture : comptes 3 a 5 du client" TO WS-LIBELLE
+        PERFORM VERIFIER
+    END-PERFORM
+    INITIALIZE COMPTE-REC
+    MOVE 7000 TO CPT-ID-CLIENT
+    MOVE "C" TO CPT-TYPE
+    MOVE "N" TO WS-ACTION
+    CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
+    MOVE "88" TO WS-ATTENDU
+    MOVE "ouverture : 6e compte refuse (88)" TO WS-LIBELLE
+    PERFORM VERIFIER
+    INITIALIZE COMPTE-REC
+    MOVE 7001 TO CPT-ID-CLIENT
+    MOVE "X" TO CPT-TYPE
+    CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
+    MOVE "87" TO WS-ATTENDU
+    MOVE "ouverture : type invalide (87)" TO WS-LIBELLE
+    PERFORM VERIFIER
+    INITIALIZE COMPTE-REC
+    MOVE 7001 TO CPT-ID-CLIENT
+    MOVE "C" TO CPT-TYPE
+    CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
+    MOVE "00" TO WS-ATTENDU
+    MOVE "ouverture : autre client non limite" TO WS-LIBELLE
+    PERFORM VERIFIER.
 
 *> Appel de COMPTE sur le compte WS-NUM (enregistrement vide sauf la cle)
 OPERER.

@@ -21,6 +21,8 @@
 *>   ALERTE_ECHECS    2        entier 2 a 99
 *>   FENETRE_ECHECS_SEC 300    entier 1 a 86400
 *>   TAUX_EPARGNE_PCT 3.00     0 a 100 (2 decimales)
+*>   MAX_COMPTES_CLIENT 5      entier 1 a 99 (comptes ouverts par un client)
+*>   MAX_INSCRIPTIONS_HEURE 20 entier 1 a 9999 (inscriptions libres par heure)
 *> Fichier : variable d'environnement PARAMS_FILE, sinon
 *> config/parametres.cfg
 IDENTIFICATION DIVISION.
@@ -96,7 +98,9 @@ VALEURS-PAR-DEFAUT.
     MOVE 3 TO LK-PRM-MAX-ECHECS
     MOVE 2 TO LK-PRM-ALERTE-ECHECS
     MOVE 300 TO LK-PRM-FENETRE-SEC
-    MOVE 0.0300 TO LK-PRM-TAUX-EPARGNE.
+    MOVE 0.0300 TO LK-PRM-TAUX-EPARGNE
+    MOVE 5 TO LK-PRM-MAX-COMPTES
+    MOVE 20 TO LK-PRM-MAX-INSCRIPTIONS.
 
 *> Ignore lignes vides et commentaires ; sinon CLE=valeur
 TRAITER-LIGNE.
@@ -135,6 +139,12 @@ APPLIQUER-CLE.
             MOVE 2 TO WS-DEC-MAX
             MOVE 0 TO WS-MIN-V
             MOVE 100 TO WS-MAX-V
+        WHEN "MAX_COMPTES_CLIENT"
+            MOVE 1 TO WS-MIN-V
+            MOVE 99 TO WS-MAX-V
+        WHEN "MAX_INSCRIPTIONS_HEURE"
+            MOVE 1 TO WS-MIN-V
+            MOVE 9999 TO WS-MAX-V
         WHEN "TAUX_EPARGNE_PCT"
             MOVE 2 TO WS-DEC-MAX
             MOVE 0 TO WS-MIN-V
@@ -167,6 +177,10 @@ APPLIQUER-CLE.
                     MOVE WS-NUM TO LK-PRM-MIN-HISTORIQUE
                 WHEN "TAUX_ANNUEL_PCT"
                     COMPUTE LK-PRM-TAUX-ANNUEL = WS-NUM / 100
+                WHEN "MAX_COMPTES_CLIENT"
+                    MOVE WS-NUM TO LK-PRM-MAX-COMPTES
+                WHEN "MAX_INSCRIPTIONS_HEURE"
+                    MOVE WS-NUM TO LK-PRM-MAX-INSCRIPTIONS
                 WHEN "TAUX_EPARGNE_PCT"
                     COMPUTE LK-PRM-TAUX-EPARGNE = WS-NUM / 100
                 WHEN "FRAIS_TENUE"

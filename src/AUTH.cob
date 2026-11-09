@@ -9,11 +9,14 @@
 *>     "D" debloquer         (LK-CLI-ID) ; l'appelant verifie que l'utilisateur
 *>                           est administrateur
 *>     "P" changer le PIN    (LK-CLI-ID, ancien LK-PIN, nouveau LK-NEW-PIN)
+*>     "N" inscription libre (LK-CLI-NOM, LK-PIN) : l'identifiant est attribue
+*>                           (renvoye dans LK-CLI-ID), role toujours client
 *>   LK-PIN, LK-NEW-PIN : 4 a 6 chiffres, cadres a gauche, complete d'espaces
 *>   LK-STATUS :
 *>     00 ok                         22 identifiant deja existant
 *>     23 identifiant introuvable    81 identifiant ou PIN incorrect
 *>     82 client bloque              83 PIN invalide (4 a 6 chiffres)
+*>     84 nom invalide (inscription) 85 trop d'inscriptions cette heure
 *>     99 action inconnue            autre : FILE STATUS d'une erreur d'E/S
 *>
 *> Regles : MAX_ECHECS_PIN echecs consecutifs bloquent le client (alerte
@@ -77,6 +80,15 @@ COPY "PARAMS.cpy".
 01 WS-PIN-OK       PIC X.
 01 WS-TIME         PIC 9(8).
 01 WS-BLOQUE-ICI   PIC X.
+01 WS-FIN          PIC X.
+01 WS-NOM-IN       PIC X(30).
+01 WS-NOM-OK       PIC X.
+01 WS-CAR          PIC X.
+01 WS-K            PIC 99.
+01 WS-ID-MAX       PIC 9(6).
+01 WS-NB-RECENTS   PIC 9(5).
+01 WS-MIN-NOW      PIC 9(12).
+01 WS-MIN-CREA     PIC 9(12).
 01 WS-FRD-ACTION   PIC X VALUE "B".
 01 WS-FRD-CPT      PIC 9(10) VALUE 0.
 01 WS-FRD-CLI      PIC 9(6).
@@ -95,7 +107,7 @@ COPY "CLIENT.cpy" REPLACING LEADING ==CLI-== BY ==LK-CLI-==
 PROCEDURE DIVISION USING LK-ACTION LK-CLIENT-REC LK-PIN LK-NEW-PIN
                          LK-STATUS.
 MAIN-PARA.
-    IF LK-ACTION = "L"
+    IF LK-ACTION = "L" OR LK-ACTION = "N"
         CALL "PARAM" USING PARAMS-REC WS-PRM-STATUS
         IF WS-PRM-STATUS NOT = "00"
             MOVE WS-PRM-STATUS TO LK-STATUS
@@ -118,6 +130,7 @@ MAIN-PARA.
         WHEN "L" PERFORM CONNEXION
         WHEN "D" PERFORM DEBLOQUER
         WHEN "P" PERFORM CHANGER-PIN
+        WHEN "N" PERFORM INSCRIRE-CLIENT
         WHEN OTHER MOVE "99" TO LK-STATUS
     END-EVALUATE
 
@@ -153,6 +166,114 @@ CREER-CLIENT.
         WRITE CLIENT-REC
         MOVE WS-FS TO LK-STATUS
     END-IF.
+
+*> Inscription libre : nom et PIN controles, limite horaire, identifiant
+*> attribue (plus grand + 1), role client. 84 nom, 83 PIN, 85 limite.
+INSCRIRE-CLIENT.
+    MOVE LK-CLI-NOM TO WS-NOM-IN
+    PERFORM VALIDER-NOM
+    IF WS-NOM-OK NOT = "O"
+        MOVE "84" TO LK-STATUS
+        EXIT PARAGRAPH
+    END-IF
+    MOVE LK-PIN TO WS-PIN-IN
+    PERFORM VALIDER-PIN
+    IF WS-PIN-OK NOT = "O"
+        MOVE "83" TO LK-STATUS
+        EXIT PARAGRAPH
+    END-IF
+    PERFORM COMPTER-INSCRIPTIONS
+    IF LK-STATUS NOT = "00"
+        EXIT PARAGRAPH
+    END-IF
+    IF WS-NB-RECENTS >= PRM-MAX-INSCRIPTIONS
+        MOVE "I" TO WS-FRD-ACTION
+        MOVE 0 TO WS-FRD-CLI
+        CALL "FRAUDE" USING WS-FRD-ACTION WS-FRD-CPT WS-FRD-CLI
+                            WS-FRD-MONTANT WS-FRD-PLAFOND WS-FRD-STATUS
+        MOVE "B" TO WS-FRD-ACTION
+        MOVE "85" TO LK-STATUS
+        EXIT PARAGRAPH
+    END-IF
+    IF WS-ID-MAX >= 999999
+        MOVE "22" TO LK-STATUS
+        EXIT PARAGRAPH
+    END-IF
+    INITIALIZE CLIENT-REC
+    COMPUTE CLI-ID = WS-ID-MAX + 1
+    MOVE FUNCTION TRIM(WS-NOM-IN) TO CLI-NOM
+    MOVE "C" TO CLI-ROLE
+    PERFORM NOUVEAU-SEL-ET-HASH
+    MOVE 0 TO CLI-ECHECS
+    MOVE "A" TO CLI-STATUT
+    ACCEPT CLI-DATE-CREA FROM DATE YYYYMMDD
+    ACCEPT WS-TIME FROM TIME
+    MOVE WS-TIME(1:6) TO CLI-HEURE-CREA
+    WRITE CLIENT-REC
+    MOVE WS-FS TO LK-STATUS
+    IF WS-FS = "00"
+        MOVE CLI-ID TO LK-CLI-ID
+    END-IF.
+
+*> Parcourt les clients : plus grand identifiant (WS-ID-MAX) et nombre de
+*> clients crees depuis moins d'une heure (WS-NB-RECENTS)
+COMPTER-INSCRIPTIONS.
+    MOVE 0 TO WS-ID-MAX WS-NB-RECENTS
+    ACCEPT WS-DATE-NOW FROM DATE YYYYMMDD
+    ACCEPT WS-HEURE-NOW FROM TIME
+    COMPUTE WS-MIN-NOW =
+        FUNCTION INTEGER-OF-DATE(WS-DATE-NOW) * 1440
+        + WS-HN-HH * 60 + WS-HN-MM
+    MOVE LOW-VALUES TO CLI-ID
+    START F-CLIENTS KEY IS >= CLI-ID
+    IF WS-FS = "00"
+        MOVE "N" TO WS-FIN
+        PERFORM UNTIL WS-FIN = "O"
+            READ F-CLIENTS NEXT RECORD
+                AT END
+                    MOVE "O" TO WS-FIN
+                NOT AT END
+                    IF CLI-ID > WS-ID-MAX
+                        MOVE CLI-ID TO WS-ID-MAX
+                    END-IF
+                    IF CLI-DATE-CREA > 0
+                        MOVE CLI-HEURE-CREA TO WS-SERIE-HEURE
+                        COMPUTE WS-MIN-CREA =
+                            FUNCTION INTEGER-OF-DATE(CLI-DATE-CREA) * 1440
+                            + WS-SH-HH * 60 + WS-SH-MM
+                        IF WS-MIN-NOW - WS-MIN-CREA < 60
+                            ADD 1 TO WS-NB-RECENTS
+                        END-IF
+                    END-IF
+            END-READ
+        END-PERFORM
+        MOVE "00" TO LK-STATUS
+    ELSE
+        IF WS-FS = "23"
+            MOVE "00" TO LK-STATUS
+        ELSE
+            MOVE WS-FS TO LK-STATUS
+        END-IF
+    END-IF.
+
+*> WS-NOM-OK = "O" si WS-NOM-IN (30 car.) contient 1 a 30 caracteres :
+*> lettres, chiffres, espace, tiret, apostrophe ou octets d'un caractere
+*> accentue (UTF-8) ; pas d'espace au debut
+VALIDER-NOM.
+    MOVE "O" TO WS-NOM-OK
+    IF WS-NOM-IN = SPACES OR WS-NOM-IN(1:1) = SPACE
+        MOVE "N" TO WS-NOM-OK
+    END-IF
+    PERFORM VARYING WS-K FROM 1 BY 1 UNTIL WS-K > 30
+        MOVE WS-NOM-IN(WS-K:1) TO WS-CAR
+        IF NOT ((WS-CAR >= "A" AND WS-CAR <= "Z")
+             OR (WS-CAR >= "a" AND WS-CAR <= "z")
+             OR (WS-CAR >= "0" AND WS-CAR <= "9")
+             OR WS-CAR = SPACE OR WS-CAR = "-" OR WS-CAR = "'"
+             OR WS-CAR >= X"80")
+            MOVE "N" TO WS-NOM-OK
+        END-IF
+    END-PERFORM.
 
 CONNEXION.
     MOVE LK-CLI-ID TO CLI-ID

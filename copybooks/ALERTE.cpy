@@ -1,5 +1,6 @@
 *> ALERTE.cpy - une ligne du journal d'alertes de fraude (ajout seul)
-*> ALR-REGLE : PLAFOND_JOUR, MONTANT_ANORMAL, PIN_BLOQUE, ECHECS_RAPIDES
+*> ALR-REGLE : PLAFOND_JOUR, MONTANT_ANORMAL, PIN_BLOQUE, ECHECS_RAPIDES,
+*>             INSCRIPTIONS (limite horaire d'inscriptions atteinte)
 01 ALERTE-REC.
    05 ALR-ID           PIC 9(10).
    05 ALR-DATE         PIC 9(8).

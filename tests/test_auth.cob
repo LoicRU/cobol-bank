@@ -31,6 +31,8 @@ COPY "ALERTE.cpy" REPLACING LEADING ==ALR-== BY ==LA-==
 01 WS-FS-ALR      PIC XX.
 01 WS-FIN         PIC X.
 01 WS-NB-ALR      PIC 9(5).
+01 WS-ID-NOUVEAU  PIC 9(6).
+01 WS-NB-INSCRITS PIC 9(3).
 01 WS-NB-ALR-ATT  PIC 9(5).
 01 WS-REGLE-ATT   PIC X(16) VALUE "PIN_BLOQUE".
 01 WS-ACTION      PIC X.
@@ -288,6 +290,8 @@ MAIN-PARA.
     MOVE 2 TO WS-NB-ALR-ATT
     PERFORM VERIF-ALERTE
 
+    PERFORM TEST-INSCRIPTION
+
     CALL "CBL_DELETE_FILE" USING "tests/CLIENTS_TEST.dat"
     CALL "CBL_DELETE_FILE" USING "tests/ALERTES_AUTH_TEST.dat"
     IF WS-NB-ECHECS = 0
@@ -298,6 +302,113 @@ MAIN-PARA.
         MOVE 1 TO RETURN-CODE
     END-IF
     STOP RUN.
+
+*> Inscription libre (action N) : validations, identifiant attribue,
+*> role client, connexion possible, limite horaire (20 par defaut) + alerte
+TEST-INSCRIPTION.
+    MOVE "N" TO WS-ACTION
+    MOVE 0 TO WS-ID
+    *> le role demande (A) est ignore : une inscription donne toujours un client
+    MOVE "A" TO WS-ROLE
+    MOVE "2468" TO WS-PIN
+    MOVE "Jean-Pierre D'Arc" TO WS-NOM
+    MOVE "00" TO WS-ATTENDU
+    MOVE "inscription : nom avec tiret et apostrophe" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE CLI-ID TO WS-ID-NOUVEAU
+    IF WS-ID-NOUVEAU > 1
+        DISPLAY "  PASS identifiant attribue : " WS-ID-NOUVEAU
+    ELSE
+        DISPLAY "  FAIL identifiant attribue : " WS-ID-NOUVEAU
+        ADD 1 TO WS-NB-ECHECS
+    END-IF
+    MOVE 1 TO WS-NB-INSCRITS
+    MOVE "L" TO WS-ACTION
+    MOVE WS-ID-NOUVEAU TO WS-ID
+    MOVE "00" TO WS-ATTENDU
+    MOVE "inscription : connexion avec le PIN choisi" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    IF CLI-ROLE = "C" AND CLI-NOM = "Jean-Pierre D'Arc"
+        DISPLAY "  PASS inscription : role client, nom conserve"
+    ELSE
+        DISPLAY "  FAIL inscription : role " CLI-ROLE " nom " CLI-NOM
+        ADD 1 TO WS-NB-ECHECS
+    END-IF
+
+    MOVE "N" TO WS-ACTION
+    MOVE "84" TO WS-ATTENDU
+    MOVE "Z<oe" TO WS-NOM
+    MOVE "inscription : caractere interdit (84)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE SPACES TO WS-NOM
+    MOVE "inscription : nom vide (84)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE " Zoe" TO WS-NOM
+    MOVE "inscription : espace au debut (84)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE "Zoe""x" TO WS-NOM
+    MOVE "inscription : guillemet (84)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE "Zoe" TO WS-NOM
+    MOVE "12" TO WS-PIN
+    MOVE "83" TO WS-ATTENDU
+    MOVE "inscription : PIN trop court (83)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE "12ab" TO WS-PIN
+    MOVE "inscription : PIN non numerique (83)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    *> limite : 20 inscriptions par heure (valeur par defaut)
+    MOVE "2468" TO WS-PIN
+    MOVE "00" TO WS-ATTENDU
+    MOVE "00" TO WS-STATUS
+    PERFORM UNTIL WS-STATUS NOT = "00" OR WS-NB-INSCRITS > 40
+        MOVE "Client" TO WS-NOM
+        PERFORM APPELER
+        IF WS-STATUS = "00"
+            ADD 1 TO WS-NB-INSCRITS
+        END-IF
+    END-PERFORM
+    MOVE "85" TO WS-ATTENDU
+    MOVE "inscription : 21e de l'heure refusee (85)" TO WS-LIBELLE
+    PERFORM VERIFIER
+    IF WS-NB-INSCRITS = 20
+        DISPLAY "  PASS 20 inscriptions acceptees avant le refus"
+    ELSE
+        DISPLAY "  FAIL inscriptions acceptees : " WS-NB-INSCRITS
+        ADD 1 TO WS-NB-ECHECS
+    END-IF
+    PERFORM LIRE-DERNIERE-ALERTE
+    IF WS-NB-ALR = 3 AND LA-REGLE = "INSCRIPTIONS"
+        DISPLAY "  PASS alerte INSCRIPTIONS ecrite"
+    ELSE
+        DISPLAY "  FAIL alerte : " WS-NB-ALR " " LA-REGLE
+        ADD 1 TO WS-NB-ECHECS
+    END-IF.
+
+LIRE-DERNIERE-ALERTE.
+    MOVE 0 TO WS-NB-ALR
+    MOVE "N" TO WS-FIN
+    OPEN INPUT F-ALR
+    IF WS-FS-ALR = "00"
+        PERFORM UNTIL WS-FIN = "O"
+            READ F-ALR
+                AT END MOVE "O" TO WS-FIN
+                NOT AT END
+                    ADD 1 TO WS-NB-ALR
+                    MOVE FA-REC TO LA-REC
+            END-READ
+        END-PERFORM
+        CLOSE F-ALR
+    END-IF.
 
 *> Appel de AUTH avec WS-ID, WS-NOM, WS-ROLE, WS-PIN, WS-NEWPIN
 APPELER.

@@ -5,6 +5,11 @@
 *>   LK-ACTION : "C" creer, "L" lire (par LK-CPT-NUM), "U" mettre a jour,
 *>               "D" depot, "R" retrait (compte LK-CPT-NUM, montant LK-MONTANT),
 *>               "V" virement de LK-CPT-NUM vers LK-DST (montant LK-MONTANT)
+*>               "N" ouverture par un client : entree LK-CPT-ID-CLIENT et
+*>               LK-CPT-TYPE (C ou E) ; le numero est attribue, solde 0,
+*>               decouvert 0, plafond par defaut, statut actif ; renvoie
+*>               le compte dans LK-COMPTE-REC et ecrit une ligne "O"
+*>               (ouverture) dans l'historique
 *>   LK-MONTANT : utilise seulement par D, R et V
 *>   LK-DST     : compte destination, utilise seulement par V
 *>   LK-STATUS :
@@ -16,6 +21,7 @@
 *>     90 operation interdite sur un compte epargne (retrait en especes,
 *>        virement vers un compte qui n'est pas un courant du meme client)
 *>     95 virement vers le meme compte
+*>     87 type de compte invalide (N)   88 trop de comptes pour ce client (N)
 *>     96 plafond journalier depasse (controle FRAUDE, retrait et virement)
 *>     98 operation faite mais ligne d'historique non ecrite
 *>     autre : FILE STATUS d'une erreur d'entree/sortie
@@ -50,6 +56,12 @@ WORKING-STORAGE SECTION.
 01 WS-LU-DST      PIC X.
 01 WS-DST-AVANT   PIC S9(9)V99.
 01 WS-APRES       PIC S9(11)V99.
+01 WS-NEW-CLI     PIC 9(6).
+01 WS-NEW-TYPE    PIC X.
+01 WS-NEW-MAX     PIC 9(10).
+01 WS-NEW-NB      PIC 9(3).
+01 WS-PRM-STATUS  PIC XX.
+COPY "PARAMS.cpy".
 01 WS-TRX-STATUS  PIC XX.
 01 WS-FRD-ACTION  PIC X VALUE "C".
 01 WS-FRD-CPT     PIC 9(10).
@@ -94,6 +106,7 @@ MAIN-PARA.
         WHEN "D" PERFORM OPERATION
         WHEN "R" PERFORM OPERATION
         WHEN "V" PERFORM VIREMENT
+        WHEN "N" PERFORM NOUVEAU-COMPTE
         WHEN OTHER MOVE "99" TO LK-STATUS
     END-EVALUATE
 
@@ -130,6 +143,70 @@ MAJ-COMPTE.
         REWRITE COMPTE-REC
     END-IF
     MOVE WS-FS TO LK-STATUS.
+
+*> Ouverture d'un compte par un client (action N)
+NOUVEAU-COMPTE.
+    MOVE LK-CPT-ID-CLIENT TO WS-NEW-CLI
+    MOVE LK-CPT-TYPE TO WS-NEW-TYPE
+    IF WS-NEW-TYPE NOT = "C" AND WS-NEW-TYPE NOT = "E"
+        MOVE "87" TO LK-STATUS
+        EXIT PARAGRAPH
+    END-IF
+    CALL "PARAM" USING PARAMS-REC WS-PRM-STATUS
+    IF WS-PRM-STATUS NOT = "00"
+        MOVE WS-PRM-STATUS TO LK-STATUS
+        EXIT PARAGRAPH
+    END-IF
+    MOVE 1000000000 TO WS-NEW-MAX
+    MOVE 0 TO WS-NEW-NB
+    MOVE LOW-VALUES TO CPT-NUM
+    START F-COMPTES KEY IS >= CPT-NUM
+    IF WS-FS = "00"
+        MOVE "N" TO WS-LU
+        PERFORM UNTIL WS-LU = "O"
+            READ F-COMPTES NEXT RECORD
+                AT END
+                    MOVE "O" TO WS-LU
+                NOT AT END
+                    IF CPT-NUM > WS-NEW-MAX
+                        MOVE CPT-NUM TO WS-NEW-MAX
+                    END-IF
+                    IF CPT-ID-CLIENT = WS-NEW-CLI
+                        ADD 1 TO WS-NEW-NB
+                    END-IF
+            END-READ
+        END-PERFORM
+    ELSE
+        IF WS-FS NOT = "23"
+            MOVE WS-FS TO LK-STATUS
+            EXIT PARAGRAPH
+        END-IF
+    END-IF
+    IF WS-NEW-NB >= PRM-MAX-COMPTES
+        MOVE "88" TO LK-STATUS
+        EXIT PARAGRAPH
+    END-IF
+    INITIALIZE COMPTE-REC
+    COMPUTE CPT-NUM = WS-NEW-MAX + 1
+    MOVE WS-NEW-CLI TO CPT-ID-CLIENT
+    MOVE 0 TO CPT-SOLDE CPT-PLAFOND CPT-DECOUVERT
+    MOVE "A" TO CPT-STATUT
+    MOVE WS-NEW-TYPE TO CPT-TYPE
+    ACCEPT CPT-DATE-OUV FROM DATE YYYYMMDD
+    WRITE COMPTE-REC
+    MOVE WS-FS TO LK-STATUS
+    IF WS-FS = "00"
+        MOVE COMPTE-REC TO LK-COMPTE-REC
+        INITIALIZE TRX-REC
+        MOVE "O" TO TRX-TYPE
+        MOVE CPT-NUM TO TRX-CPT-DST
+        MOVE "A" TO TRX-STATUT
+        MOVE "OUVERTURE DE COMPTE" TO TRX-MOTIF
+        CALL "TRX" USING TRX-REC WS-TRX-STATUS
+        IF WS-TRX-STATUS NOT = "00"
+            MOVE "98" TO LK-STATUS
+        END-IF
+    END-IF.
 
 *> Depot (D) ou retrait (R) : controles, mise a jour du solde, historique
 OPERATION.
