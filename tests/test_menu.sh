@@ -129,6 +129,20 @@ verifie "epargne : virement vers un tiers interdit" $T/MENU_12.out "interdite su
 verifie "epargne : virement vers son courant" $T/MENU_12.out "Nouveau solde :        150.00"
 verifie "mes comptes : epargne affiche" $T/MENU_12.out "epargne"
 
+echo "MENU : inscription libre et ouverture de compte par le client"
+printf '%s\n' 2 "Zoe Martin" 2468 2 "Zo<e" 2468 2 "Zoe" 12 0 | $BIN > $T/MENU_13.out 2>&1
+verifie "inscription : client cree" $T/MENU_13.out "Client cree : identifiant 000004"
+verifie "inscription : nom invalide" $T/MENU_13.out "Nom invalide"
+verifie "inscription : PIN invalide" $T/MENU_13.out "PIN invalide"
+printf '%s\n' 1 4 2468 8 "" 8 2 8 9 8 "" 8 "" 8 "" 8 "" 1 0 0 | $BIN > $T/MENU_14.out 2>&1
+verifie "connexion du nouveau client" $T/MENU_14.out "Bonjour Zoe Martin"
+verifie "ouverture : premier compte courant" $T/MENU_14.out "Compte ouvert : 1000000004"
+verifie "ouverture : compte epargne" $T/MENU_14.out "Type : epargne"
+verifie "ouverture : type invalide" $T/MENU_14.out "Type de compte invalide"
+verifie "ouverture : limite de comptes" $T/MENU_14.out "Nombre maximal de comptes atteint"
+verifie "mes comptes : 5 comptes" $T/MENU_14.out "Compte 1000000008  solde"
+absent "mes comptes : pas de 6e compte" $T/MENU_14.out "Compte 1000000009"
+
 echo "MENU : fin de saisie sans plantage"
 printf '' | timeout 20 $BIN > $T/MENU_7.out 2>&1
 verifie "arret propre sur fin d'entree" $T/MENU_7.out "arret"

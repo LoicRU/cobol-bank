@@ -43,6 +43,14 @@ verifie "historique de l'epargne" "$(api 'historique 2 4321 1000000005')" '"moti
 verifie "historique d'un autre compte (74)" "$(api 'historique 2 4321 1000000003')" '"statut":"74"'
 verifie "Clara bloquee (82)" "$(api 'connexion 4 2468')" '"statut":"82"'
 
+verifie "API : inscription" "$(api 'inscription 0 1357 Jean-Pierre_D'"'"'Arc')" '"id":5'
+verifie "API : connexion apres inscription" "$(api 'connexion 5 1357')" '"nom":"Jean-Pierre D'"'"'Arc"'
+verifie "API : nom invalide (84)" "$(api 'inscription 0 1357 Zo<e')" '"statut":"84"'
+verifie "API : PIN invalide (83)" "$(api 'inscription 0 12 Zoe')" '"statut":"83"'
+verifie "API : ouverture epargne" "$(api 'ouvrir 5 1357 E')" '"num":"1000000006","type":"E"'
+verifie "API : type invalide (87)" "$(api 'ouvrir 5 1357 X')" '"statut":"87"'
+verifie "API : historique de l'ouverture" "$(api 'historique 5 1357 1000000006')" '"motif":"OUVERTURE DE COMPTE"'
+
 echo "WEB : serveur HTTP"
 python3 web/server.py $PORT > $T/WEB_serveur.log 2>&1 &
 PID=$!
@@ -61,6 +69,19 @@ verifie "PIN trop court refuse" "$(post comptes '{"id":"3","pin":"12"}')" '"stat
 verifie "JSON invalide refuse" "$(post comptes 'pas du json')" '"statut": "79"'
 verifie "commande inconnue" "$(post virer '{}')" '"statut": "77"'
 verifie "chemin inconnu" "$(curl -s $URL/secret)" '"statut": "404"'
+verifie "inscription via HTTP" "$(post inscription '{"nom":"Zoé Müller","pin":"2468"}')" '"id": 6'
+verifie "connexion du nouvel inscrit" "$(post connexion '{"id":"6","pin":"2468"}')" 'Zo.u00e9 M.u00fcller'
+verifie "inscription : nom invalide refuse" "$(post inscription '{"nom":"Z<oe","pin":"2468"}')" '"statut": "79"'
+verifie "inscription : sous-ligne refusee" "$(post inscription '{"nom":"a_b","pin":"2468"}')" '"statut": "79"'
+verifie "inscription : nom trop long refuse" "$(post inscription '{"nom":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pin":"2468"}')" '"statut": "79"'
+verifie "inscription : PIN invalide refuse" "$(post inscription '{"nom":"Zoe","pin":"12"}')" '"statut": "79"'
+verifie "ouverture via HTTP" "$(post ouvrir '{"id":"6","pin":"2468","type":"C"}')" '"type": "C"'
+verifie "ouverture : type invalide refuse" "$(post ouvrir '{"id":"6","pin":"2468","type":"X"}')" '"statut": "79"'
+post ouvrir '{"id":"6","pin":"2468","type":"C"}' > /dev/null
+post ouvrir '{"id":"6","pin":"2468","type":"C"}' > /dev/null
+post ouvrir '{"id":"6","pin":"2468","type":"E"}' > /dev/null
+post ouvrir '{"id":"6","pin":"2468","type":"C"}' > /dev/null
+verifie "ouverture : 6e compte refuse (88)" "$(post ouvrir '{"id":"6","pin":"2468","type":"C"}')" '"statut": "88"'
 absent=$(grep -c "5555" $T/WEB_serveur.log)
 if [ "$absent" -eq 0 ]; then echo "  PASS le PIN n'apparait pas dans les logs"
 else echo "  FAIL le PIN apparait dans les logs"; NB_ECHECS=$((NB_ECHECS + 1)); fi

@@ -85,12 +85,43 @@ tr.refuse td { color: var(--doux); }
       <p><button type="submit">Se connecter</button></p>
     </form>
     <p class="vide">Les comptes administrateur se gèrent en console.</p>
+    <p><button class="secondaire" id="aller-inscription" type="button">Créer mon compte client</button></p>
+  </section>
+
+  <section id="vue-inscription" class="carte" hidden>
+    <h2>Créer mon compte client</h2>
+    <form id="form-inscription" autocomplete="off">
+      <label for="i-nom">Nom (30 caractères au plus)</label>
+      <input id="i-nom" maxlength="30" required>
+      <label for="i-pin">PIN (4 à 6 chiffres)</label>
+      <input id="i-pin" type="password" inputmode="numeric" pattern="[0-9]{4,6}"
+             minlength="4" maxlength="6" required>
+      <label for="i-pin2">Confirmer le PIN</label>
+      <input id="i-pin2" type="password" inputmode="numeric" pattern="[0-9]{4,6}"
+             minlength="4" maxlength="6" required>
+      <p>
+        <button type="submit">Créer</button>
+        <button class="secondaire" id="retour-connexion" type="button">Retour</button>
+      </p>
+    </form>
+    <p class="vide">Lettres, chiffres, espace, tiret et apostrophe. Une fois connecté, vous ouvrirez vos comptes vous-même.</p>
   </section>
 
   <div id="vue-compte" hidden>
     <section class="carte">
       <h2>Mes comptes</h2>
       <div id="comptes" role="listbox" aria-label="Mes comptes"></div>
+    </section>
+
+    <section class="carte">
+      <h2>Ouvrir un compte</h2>
+      <form id="form-ouvrir" class="ligne">
+        <select id="n-type" aria-label="Type de compte">
+          <option value="C">Courant</option>
+          <option value="E">Épargne</option>
+        </select>
+        <button type="submit" id="n-valider">Ouvrir</button>
+      </form>
     </section>
 
     <section class="carte">
@@ -135,13 +166,17 @@ const MESSAGES = {
   "81": "Identifiant ou PIN incorrect.",
   "82": "Client bloqué : voir un administrateur.",
   "83": "PIN invalide (4 à 6 chiffres).",
+  "84": "Nom invalide (lettres, chiffres, espace, tiret, apostrophe ; 30 caractères au plus).",
+  "85": "Trop d'inscriptions cette heure : réessayer plus tard.",
+  "87": "Type de compte invalide.",
+  "88": "Nombre maximal de comptes atteint.",
   "90": "Opération interdite sur un compte épargne.",
   "91": "Montant invalide.", "92": "Compte non actif.",
   "93": "Solde insuffisant.", "94": "Dépassement de capacité du solde.",
   "95": "Virement vers le même compte.", "96": "Plafond journalier dépassé.",
   "98": "Fait, mais historique non écrit.", "99": "Erreur technique."
 };
-const TYPES = { D: "Dépôt", R: "Retrait", V: "Virement", I: "Intérêts", F: "Frais" };
+const TYPES = { D: "Dépôt", R: "Retrait", V: "Virement", I: "Intérêts", F: "Frais", O: "Ouverture du compte" };
 const $ = (id) => document.getElementById(id);
 
 let session = null;       // { id, pin, nom } : en mémoire seulement
@@ -161,7 +196,7 @@ async function appel(commande, donnees) {
   try {
     const r = await fetch("/api/" + commande, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: session.id, pin: session.pin, ...donnees })
+      body: JSON.stringify({ ...(session ? { id: session.id, pin: session.pin } : {}), ...donnees })
     });
     return await r.json();
   } catch (e) {
@@ -244,7 +279,7 @@ async function chargerHistorique() {
     if (o.statut === "R") tr.className = "refuse";
     const d = o.date, h = o.heure;
     const entrant = o.dst === compteCourant && !(o.type === "V" && o.src === compteCourant);
-    const signe = o.statut === "R" ? "" : (entrant ? "+" : "−");
+    const signe = (o.statut === "R" || o.type === "O") ? "" : (entrant ? "+" : "−");
     const libelle = TYPES[o.type] + (o.statut === "R" ? " refusé" : "")
       + (o.motif && o.statut === "R" ? " (" + o.motif.toLowerCase() + ")" : "");
     const cases = [
@@ -266,8 +301,9 @@ function choisirOperation(op) {
   $("o-compte-lib").textContent = op === "virement" ? "Compte à débiter" : "Compte";
 }
 
-function afficher(connecte) {
-  $("vue-connexion").hidden = connecte;
+function afficher(connecte, inscription) {
+  $("vue-connexion").hidden = connecte || !!inscription;
+  $("vue-inscription").hidden = !inscription;
   $("vue-compte").hidden = !connecte;
   $("session").hidden = !connecte;
 }
@@ -284,6 +320,37 @@ $("form-connexion").addEventListener("submit", async (e) => {
   afficher(true);
   choisirOperation("depot");
   if (await chargerComptes()) chargerHistorique();
+});
+
+$("aller-inscription").addEventListener("click", () => { message(""); afficher(false, true); });
+$("retour-connexion").addEventListener("click", () => { message(""); afficher(false, false); });
+
+$("form-inscription").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message("");
+  const pin = $("i-pin").value.trim();
+  if (pin !== $("i-pin2").value.trim()) { message("Les deux PIN sont différents.", false); return; }
+  const r = await appel("inscription", { nom: $("i-nom").value.trim(), pin });
+  $("i-pin").value = ""; $("i-pin2").value = "";
+  if (!r.ok) { erreur(r.statut); return; }
+  $("c-id").value = String(r.id);
+  $("i-nom").value = "";
+  afficher(false, false);
+  message("Compte client créé : votre identifiant est " + r.id + ". Connectez-vous avec votre PIN, puis ouvrez un compte.", true);
+});
+
+$("form-ouvrir").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message("");
+  const bouton = $("n-valider");
+  bouton.disabled = true;
+  const r = await appel("ouvrir", { type: $("n-type").value });
+  bouton.disabled = false;
+  if (!r.ok) { erreur(r.statut); return; }
+  message("Compte ouvert : " + r.num + (r.type === "E" ? " (épargne)." : " (courant)."), true);
+  compteCourant = r.num;
+  await chargerComptes();
+  chargerHistorique();
 });
 
 $("quitter").addEventListener("click", () => {

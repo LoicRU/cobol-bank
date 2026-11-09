@@ -29,10 +29,16 @@ COMMANDES = {
     "retrait": ["compte", "montant"],
     "virement": ["source", "destination", "montant"],
     "historique": ["compte"],
+    "ouvrir": ["type"],
+    "inscription": ["nom"],   # sans authentification : pas d'identifiant
 }
 RE_ID = re.compile(r"^[0-9]{1,6}$")
 RE_PIN = re.compile(r"^[0-9]{4,6}$")
 RE_COMPTE = re.compile(r"^[0-9]{1,10}$")
+RE_TYPE = re.compile(r"[CE]")
+# lettres (accents compris), chiffres, espace, tiret, apostrophe ; sans espace
+# ni sous-lignes au debut/fin ; 30 octets UTF-8 au plus (champ COBOL X(30))
+RE_NOM = re.compile(r"[^\W_](?:[\w '\-]*[^\W_])?")
 RE_MONTANT = re.compile(r"^[0-9]{1,9}([.,][0-9]{1,2})?$")
 
 
@@ -44,14 +50,26 @@ def valider(commande, corps):
     if not isinstance(corps, dict):
         return None
     ident, pin = str(corps.get("id", "")), str(corps.get("pin", ""))
+    if commande == "inscription":
+        ident = "0"
     if not RE_ID.fullmatch(ident) or not RE_PIN.fullmatch(pin):
         return None
     morceaux = [commande, ident, pin]
     for nom in COMMANDES[commande]:
         valeur = str(corps.get(nom, ""))
-        motif = RE_MONTANT if nom == "montant" else RE_COMPTE
-        if not motif.fullmatch(valeur):
-            return None
+        if nom == "nom":
+            # le nom est valide ici ; les espaces sont codes "_" pour le COBOL
+            if "_" in valeur or not RE_NOM.fullmatch(valeur) \
+                    or len(valeur.encode("utf-8")) > 30:
+                return None
+            valeur = valeur.replace(" ", "_")
+        elif nom == "type":
+            if not RE_TYPE.fullmatch(valeur):
+                return None
+        else:
+            motif = RE_MONTANT if nom == "montant" else RE_COMPTE
+            if not motif.fullmatch(valeur):
+                return None
         morceaux.append(valeur)
     return " ".join(morceaux) + "\n"
 

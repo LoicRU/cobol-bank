@@ -118,6 +118,7 @@ MAIN-PARA.
         DISPLAY " "
         DISPLAY "=== COBOL-BANK ==="
         DISPLAY "1. Connexion"
+        DISPLAY "2. Creer mon compte client"
         DISPLAY "0. Quitter"
         PERFORM LIRE-CHOIX
         EVALUATE WS-CHOIX(1:1)
@@ -130,6 +131,8 @@ MAIN-PARA.
                         PERFORM MENU-CLIENT
                     END-IF
                 END-IF
+            WHEN "2"
+                PERFORM INSCRIPTION
             WHEN "0"
                 MOVE "O" TO WS-QUITTER
             WHEN OTHER
@@ -284,9 +287,11 @@ MENU-CLIENT.
         DISPLAY "5. Historique d'un compte"
         DISPLAY "6. Releve de compte"
         DISPLAY "7. Changer mon PIN"
+        DISPLAY "8. Ouvrir un compte"
         DISPLAY "0. Deconnexion"
         PERFORM LIRE-CHOIX
         EVALUATE WS-CHOIX(1:1)
+            WHEN "8" PERFORM OUVRIR-MON-COMPTE
             WHEN "1" PERFORM LISTER-MES-COMPTES
             WHEN "2" PERFORM OPERATION-DEPOT
             WHEN "3" PERFORM OPERATION-RETRAIT
@@ -298,6 +303,57 @@ MENU-CLIENT.
             WHEN OTHER DISPLAY "Choix invalide"
         END-EVALUATE
     END-PERFORM.
+
+*> Inscription libre depuis le menu de depart : role client uniquement
+INSCRIPTION.
+    DISPLAY "Nom : " WITH NO ADVANCING
+    MOVE SPACES TO WS-IN
+    ACCEPT WS-IN
+    INITIALIZE CLIENT-REC
+    MOVE FUNCTION TRIM(WS-IN) TO CLI-NOM
+    IF FUNCTION LENGTH(FUNCTION TRIM(WS-IN)) > 30
+        MOVE "84" TO WS-STATUS
+        PERFORM MESSAGE-STATUT
+        EXIT PARAGRAPH
+    END-IF
+    PERFORM SAISIR-PIN-NOUVEAU
+    MOVE "N" TO WS-ACTION
+    CALL "AUTH" USING WS-ACTION CLIENT-REC WS-PIN WS-NEW-PIN WS-STATUS
+    IF WS-STATUS = "00"
+        DISPLAY "Client cree : identifiant " CLI-ID
+        DISPLAY "Connectez-vous, puis ouvrez un compte (option 8)."
+    ELSE
+        PERFORM MESSAGE-STATUT
+    END-IF.
+
+*> Ouverture d'un compte par le client connecte (courant ou epargne)
+OUVRIR-MON-COMPTE.
+    DISPLAY "Type (1 courant, 2 epargne) [1] : " WITH NO ADVANCING
+    MOVE SPACES TO WS-IN
+    ACCEPT WS-IN
+    INITIALIZE COMPTE-REC
+    EVALUATE FUNCTION TRIM(WS-IN)
+        WHEN SPACES
+        WHEN "1"
+            MOVE "C" TO CPT-TYPE
+        WHEN "2"
+            MOVE "E" TO CPT-TYPE
+        WHEN OTHER
+            MOVE "N" TO CPT-TYPE
+    END-EVALUATE
+    MOVE WS-USER-ID TO CPT-ID-CLIENT
+    MOVE "N" TO WS-ACTION
+    CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
+    IF WS-STATUS = "00"
+        DISPLAY "Compte ouvert : " CPT-NUM
+        IF CPT-EPARGNE
+            DISPLAY "Type : epargne"
+        ELSE
+            DISPLAY "Type : courant"
+        END-IF
+    ELSE
+        PERFORM MESSAGE-STATUT
+    END-IF.
 
 DECONNEXION.
     MOVE "N" TO WS-SESSION
@@ -1082,6 +1138,10 @@ MESSAGE-STATUT.
         WHEN "81" DISPLAY "Identifiant ou PIN incorrect."
         WHEN "82" DISPLAY "Client bloque : voir un administrateur."
         WHEN "83" DISPLAY "PIN invalide (4 a 6 chiffres)."
+        WHEN "84" DISPLAY "Nom invalide (lettres, chiffres, espace, tiret, apostrophe ; 30 caracteres au plus)."
+        WHEN "85" DISPLAY "Trop d'inscriptions cette heure : reessayer plus tard."
+        WHEN "87" DISPLAY "Type de compte invalide."
+        WHEN "88" DISPLAY "Nombre maximal de comptes atteint."
         WHEN "90" DISPLAY "Operation interdite sur un compte epargne."
         WHEN "91" DISPLAY "Montant invalide."
         WHEN "92" DISPLAY "Compte non actif."

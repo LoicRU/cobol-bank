@@ -14,11 +14,16 @@
 *>   retrait    id pin compte montant
 *>   virement   id pin source destination montant
 *>   historique id pin compte
+*>   ouvrir     id pin type            (type C courant ou E epargne)
+*>   inscription 0 pin nom             (sans authentification ; le nom ecrit
+*>                                      les espaces en "_" ; role client)
 *> Reponse : {"ok":true,...} ou {"ok":false,"statut":"NN"}
 *> Statuts : ceux de AUTH et COMPTE, plus
 *>     74 compte qui n'est pas au client   77 commande inconnue
 *>     78 role non autorise (administrateur : console uniquement)
 *>     79 parametre invalide (compte ou montant)
+*>     83 PIN invalide  84 nom invalide  85 trop d'inscriptions
+*>     87 type invalide 88 trop de comptes
 *> Montant : chiffres avec point ou virgule decimale, 2 decimales au plus.
 IDENTIFICATION DIVISION.
 PROGRAM-ID. API.
@@ -57,9 +62,9 @@ COPY "PARAMS.cpy".
 01 WS-PIN           PIC X(6).
 01 WS-PIN-TXT       PIC X(20).
 01 WS-NEW-PIN       PIC X(6) VALUE SPACES.
-01 WS-P1            PIC X(20).
-01 WS-P2            PIC X(20).
-01 WS-P3            PIC X(20).
+01 WS-P1            PIC X(32).
+01 WS-P2            PIC X(32).
+01 WS-P3            PIC X(32).
 01 WS-ACTION        PIC X.
 01 WS-STATUS        PIC XX.
 01 WS-MONTANT       PIC 9(9)V99.
@@ -107,6 +112,10 @@ MAIN-PARA.
         INTO WS-CMD WS-ID-TXT WS-PIN-TXT WS-P1 WS-P2 WS-P3
     END-UNSTRING
 
+    IF WS-CMD = "inscription"
+        PERFORM CMD-INSCRIPTION
+        STOP RUN
+    END-IF
     PERFORM AUTHENTIFIER
     IF WS-STATUS NOT = "00"
         PERFORM REPONDRE-ERREUR
@@ -118,6 +127,7 @@ MAIN-PARA.
             WHEN "retrait"    PERFORM CMD-DEPOT-RETRAIT
             WHEN "virement"   PERFORM CMD-VIREMENT
             WHEN "historique" PERFORM CMD-HISTORIQUE
+            WHEN "ouvrir"     PERFORM CMD-OUVRIR
             WHEN OTHER
                 MOVE "77" TO WS-STATUS
                 PERFORM REPONDRE-ERREUR
@@ -147,6 +157,49 @@ AUTHENTIFIER.
             INSPECT WS-NOM REPLACING ALL '"' BY "'"
             INSPECT WS-NOM REPLACING ALL "\" BY "/"
         END-IF
+    END-IF.
+
+*> inscription 0 <pin> <nom_avec_underscores>
+CMD-INSCRIPTION.
+    IF FUNCTION LENGTH(FUNCTION TRIM(WS-PIN-TXT)) > 6
+        MOVE "83" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    INITIALIZE CLIENT-REC
+    MOVE WS-PIN-TXT TO WS-PIN
+    MOVE SPACES TO CLI-NOM
+    INSPECT WS-P1 REPLACING ALL "_" BY SPACE
+    IF FUNCTION LENGTH(FUNCTION TRIM(WS-P1)) > 30
+        MOVE "84" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-P1 TO CLI-NOM
+    MOVE "N" TO WS-ACTION
+    CALL "AUTH" USING WS-ACTION CLIENT-REC WS-PIN WS-NEW-PIN WS-STATUS
+    IF WS-STATUS = "00"
+        MOVE CLI-ID TO WS-ED-N
+        DISPLAY '{"ok":true,"id":' FUNCTION TRIM(WS-ED-N) '}'
+    ELSE
+        PERFORM REPONDRE-ERREUR
+    END-IF.
+
+*> ouvrir id pin type
+CMD-OUVRIR.
+    INITIALIZE COMPTE-REC
+    MOVE WS-ID-CLIENT TO CPT-ID-CLIENT
+    MOVE WS-P1(1:1) TO CPT-TYPE
+    IF WS-P1(2:) NOT = SPACES
+        MOVE "N" TO CPT-TYPE
+    END-IF
+    MOVE "N" TO WS-ACTION
+    CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
+    IF WS-STATUS = "00" OR WS-STATUS = "98"
+        DISPLAY '{"ok":true,"statut":"' WS-STATUS '","num":"' CPT-NUM
+                '","type":"' CPT-TYPE '"}'
+    ELSE
+        PERFORM REPONDRE-ERREUR
     END-IF.
 
 CMD-CONNEXION.
