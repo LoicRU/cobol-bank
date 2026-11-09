@@ -45,6 +45,7 @@ WORKING-STORAGE SECTION.
 01 WS-MOTIF       PIC X(30).
 01 WS-LU          PIC X.
 01 WS-LU-DST      PIC X.
+01 WS-DST-AVANT   PIC S9(9)V99.
 01 WS-TRX-STATUS  PIC XX.
 01 WS-FRD-ACTION  PIC X VALUE "C".
 01 WS-FRD-CPT     PIC 9(10).
@@ -204,6 +205,7 @@ VIREMENT.
     IF WS-FS = "00"
         MOVE "O" TO WS-LU-DST
         MOVE COMPTE-REC TO DST-REC
+        MOVE DST-SOLDE TO WS-DST-AVANT
     END-IF
 
     EVALUATE TRUE
@@ -297,14 +299,32 @@ CONTROLE-FRAUDE.
 JOURNALISER.
     INITIALIZE TRX-REC
     MOVE LK-ACTION TO TRX-TYPE
+    *> comptes concernes et solde de chacun juste apres l'operation
+    *> (solde actuel, inchange, si l'operation est refusee)
     EVALUATE LK-ACTION
         WHEN "D"
             MOVE LK-CPT-NUM TO TRX-CPT-DST
+            IF WS-LU = "O"
+                MOVE CPT-SOLDE TO TRX-SOLDE-DST
+            END-IF
         WHEN "R"
             MOVE LK-CPT-NUM TO TRX-CPT-SRC
+            IF WS-LU = "O"
+                MOVE CPT-SOLDE TO TRX-SOLDE-SRC
+            END-IF
         WHEN "V"
             MOVE LK-CPT-NUM TO TRX-CPT-SRC
             MOVE LK-DST TO TRX-CPT-DST
+            IF WS-LU = "O"
+                MOVE SRC-SOLDE TO TRX-SOLDE-SRC
+            END-IF
+            IF WS-LU-DST = "O"
+                IF LK-STATUS = "00"
+                    MOVE DST-SOLDE TO TRX-SOLDE-DST
+                ELSE
+                    MOVE WS-DST-AVANT TO TRX-SOLDE-DST
+                END-IF
+            END-IF
     END-EVALUATE
     MOVE LK-MONTANT TO TRX-MONTANT
     IF LK-STATUS = "00"
