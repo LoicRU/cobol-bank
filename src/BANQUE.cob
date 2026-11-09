@@ -53,6 +53,7 @@ COPY "COMPTE.cpy".
 COPY "CLIENT.cpy".
 COPY "BATCH.cpy".
 COPY "RELEVE.cpy".
+COPY "PARAMS.cpy".
 01 WS-FS            PIC XX.
 01 WS-CPT-NAME      PIC X(100).
 01 WS-CLI-NAME      PIC X(100).
@@ -133,6 +134,13 @@ MAIN-PARA.
 PREPARER.
     CALL "CBL_CREATE_DIR" USING "data"
     CALL "CBL_CREATE_DIR" USING "reports"
+    CALL "PARAM" USING PARAMS-REC WS-STATUS
+    IF WS-STATUS NOT = "00"
+        PERFORM MESSAGE-STATUT
+        DISPLAY "Configuration refusee : corriger config/parametres.cfg"
+        MOVE 1 TO RETURN-CODE
+        STOP RUN
+    END-IF
     MOVE "data/COMPTES.dat" TO WS-CPT-NAME
     ACCEPT WS-CPT-NAME FROM ENVIRONMENT "COMPTES_FILE"
         ON EXCEPTION MOVE "data/COMPTES.dat" TO WS-CPT-NAME
@@ -813,6 +821,9 @@ MESSAGE-STATUT.
         WHEN "00" DISPLAY "Operation effectuee."
         WHEN "22" DISPLAY "Existe deja."
         WHEN "23" DISPLAY "Introuvable."
+        WHEN "61" DISPLAY "Parametre invalide ou hors limites."
+        WHEN "62" DISPLAY "Parametre inconnu dans le fichier."
+        WHEN "63" DISPLAY "Ligne de parametres mal formee."
         WHEN "71" DISPLAY "Periode deja traitee."
         WHEN "72" DISPLAY "Periode interrompue : verification manuelle."
         WHEN "73" DISPLAY "Periode invalide."
