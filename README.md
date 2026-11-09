@@ -25,6 +25,7 @@ make test                      # compile et lance toutes les suites de tests
 make web                       # lance l'interface web sur http://127.0.0.1:8080 (Python 3 requis)
 make demo                      # cree un jeu de donnees de demonstration dans demo/
 make run-demo                  # lance le programme sur ces donnees
+make web-demo                  # lance l'interface web sur ces donnees
 make clean                     # supprime exécutables et fichiers de test
 ```
 
@@ -187,11 +188,14 @@ make web                 # compile bin/api puis lance le serveur sur le port 808
 python3 web/server.py 9000   # autre port
 ```
 
-Ouvrir `http://127.0.0.1:8080`, créer son compte client (« Créer mon compte client » : nom et PIN, l'identifiant attribué s'affiche) puis se connecter avec l'identifiant numérique et le PIN d'un **client** (les administrateurs restent en console, code 78). Pour essayer sur les données de démonstration, lancer d'abord `make demo` puis :
+Ouvrir `http://127.0.0.1:8080`, créer son compte client (« Créer mon compte client » : nom et PIN, l'identifiant attribué s'affiche) puis se connecter avec l'identifiant numérique et le PIN d'un **client** (les administrateurs restent en console, code 78). Pour essayer sur les données de démonstration :
 
 ```
-CLIENTS_FILE=demo/CLIENTS.dat COMPTES_FILE=demo/COMPTES.dat TRX_FILE=demo/TRANSACTIONS.dat ALERTES_FILE=demo/ALERTES.dat python3 web/server.py
+make web-demo                 # crée demo/ si besoin, puis lance le site dessus
+sh tests/demo.sh web 9000     # même chose sur un autre port
 ```
+
+En mode démo, la page de connexion affiche un encart « Comptes de démonstration » (Alice, Bob, Clara, avec identifiants et PIN) : un clic sur « Utiliser » remplit le formulaire. L'encart n'apparaît jamais sans `--demo`.
 
 Fonctionnement : `web/index.html` appelle `POST /api/<commande>` sur `web/server.py`, qui transmet une ligne (`commande id pin paramètres`) à `bin/api` (module `API.cob`) par l'entrée standard et renvoie son JSON. Le serveur ne garde aucun état : l'identifiant et le PIN accompagnent chaque requête et sont vérifiés par `AUTH` à chaque fois, donc le blocage après échecs de PIN, le plafond journalier, le découvert et les règles de l'épargne s'appliquent exactement comme en console. Le serveur n'écoute que sur `127.0.0.1`, valide strictement les champs (chiffres seulement) et ne met ni PIN ni corps de requête dans ses logs ; les appels au COBOL sont sérialisés.
 

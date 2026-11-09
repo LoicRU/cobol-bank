@@ -2,6 +2,8 @@
 # demo.sh - jeu de donnees de demonstration, dans demo/ (jamais data/)
 #   sh tests/demo.sh        recree demo/ en jouant un scenario sur le vrai programme
 #   sh tests/demo.sh run    lance le programme sur les donnees de demo/
+#   sh tests/demo.sh web [port]   lance l'interface web sur les donnees de demo/
+#                           (cree demo/ si besoin ; affiche les comptes d'essai)
 # Variables : DEMO_DIR (defaut demo), PARAMS_FILE (defaut config/parametres.cfg)
 
 BIN=bin/banque
@@ -13,6 +15,11 @@ export BATCH_FILE=$D/BATCH.dat BATCH_REPORT_DIR=$D/reports RELEVE_DIR=$D/reports
 if [ "$1" = "run" ]; then
     [ -f "$CLIENTS_FILE" ] || { echo "Pas de donnees : lancer d'abord make demo"; exit 1; }
     exec $BIN
+fi
+
+if [ "$1" = "web" ]; then
+    [ -f "$CLIENTS_FILE" ] || sh "$0" > /dev/null
+    exec python3 web/server.py --demo ${2:+"$2"}
 fi
 
 [ -x $BIN ] || { echo "Compiler d'abord : make"; exit 1; }

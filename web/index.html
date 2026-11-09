@@ -59,6 +59,10 @@ th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: l
 tr.refuse td { color: var(--doux); }
 .defile { overflow-x: auto; }
 .vide { color: var(--doux); }
+.demo-ligne { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 8px 0; border-top: 1px solid var(--trait); }
+.demo-ligne button { flex: 0 0 auto; }
+.demo-ligne small { display: block; color: var(--doux); }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -86,6 +90,12 @@ tr.refuse td { color: var(--doux); }
     </form>
     <p class="vide">Les comptes administrateur se gèrent en console.</p>
     <p><button class="secondaire" id="aller-inscription" type="button">Créer mon compte client</button></p>
+  </section>
+
+  <section id="demo" class="carte" hidden>
+    <h2>Comptes de démonstration</h2>
+    <p class="vide">Données de <code>make demo</code>. Cliquer sur un compte remplit le formulaire.</p>
+    <div id="demo-liste"></div>
   </section>
 
   <section id="vue-inscription" class="carte" hidden>
@@ -303,6 +313,7 @@ function choisirOperation(op) {
 
 function afficher(connecte, inscription) {
   $("vue-connexion").hidden = connecte || !!inscription;
+  $("demo").hidden = connecte || !!inscription || $("demo-liste").children.length === 0;
   $("vue-inscription").hidden = !inscription;
   $("vue-compte").hidden = !connecte;
   $("session").hidden = !connecte;
@@ -321,6 +332,31 @@ $("form-connexion").addEventListener("submit", async (e) => {
   choisirOperation("depot");
   if (await chargerComptes()) chargerHistorique();
 });
+
+const DEMO = [
+  { id: "2", pin: "4321", nom: "Alice", note: "2 comptes courants, 1 épargne, historique" },
+  { id: "3", pin: "5555", nom: "Bob", note: "découvert autorisé, solde négatif" },
+  { id: "4", pin: "2468", nom: "Clara", note: "client bloqué (refus à la connexion)" }
+];
+fetch("/api/config").then((r) => r.json()).then((c) => {
+  if (!c.demo) return;
+  const liste = $("demo-liste");
+  for (const d of DEMO) {
+    const ligne = document.createElement("div");
+    ligne.className = "demo-ligne";
+    const texte = document.createElement("div");
+    texte.textContent = d.nom + " · identifiant " + d.id + " · PIN " + d.pin;
+    const note = document.createElement("small");
+    note.textContent = d.note;
+    texte.append(note);
+    const bouton = document.createElement("button");
+    bouton.type = "button"; bouton.className = "secondaire"; bouton.textContent = "Utiliser";
+    bouton.addEventListener("click", () => { $("c-id").value = d.id; $("c-pin").value = d.pin; $("c-pin").focus(); });
+    ligne.append(texte, bouton);
+    liste.append(ligne);
+  }
+  $("demo").hidden = false;
+}).catch(() => {});
 
 $("aller-inscription").addEventListener("click", () => { message(""); afficher(false, true); });
 $("retour-connexion").addEventListener("click", () => { message(""); afficher(false, false); });

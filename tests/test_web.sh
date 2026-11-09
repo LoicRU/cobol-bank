@@ -58,6 +58,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
     curl -s -o /dev/null "$URL/" && break
     sleep 0.3
 done
+verifie "config : pas de mode demo" "$(curl -s $URL/api/config)" '"demo": false'
 verifie "page d'accueil" "$(curl -s $URL/)" "<title>cobol-bank</title>"
 verifie "connexion Bob" "$(post connexion '{"id":"3","pin":"5555"}')" '"nom": "Bob"'
 verifie "comptes de Bob" "$(post comptes '{"id":"3","pin":"5555"}')" '"solde": -102.0'
@@ -85,6 +86,13 @@ verifie "ouverture : 6e compte refuse (88)" "$(post ouvrir '{"id":"6","pin":"246
 absent=$(grep -c "5555" $T/WEB_serveur.log)
 if [ "$absent" -eq 0 ]; then echo "  PASS le PIN n'apparait pas dans les logs"
 else echo "  FAIL le PIN apparait dans les logs"; NB_ECHECS=$((NB_ECHECS + 1)); fi
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+
+python3 web/server.py --demo $PORT > $T/WEB_demo.log 2>&1 &
+PID=$!
+sleep 1
+verifie "config : mode demo" "$(curl -s $URL/api/config)" '"demo": true'
 kill $PID 2>/dev/null
 wait $PID 2>/dev/null
 

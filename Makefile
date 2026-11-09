@@ -1,7 +1,7 @@
 COBC   = cobc
 FLAGS  = -free -I copybooks
 
-.PHONY: all test clean run demo run-demo web
+.PHONY: all test clean run demo run-demo web web-demo
 
 all: bin/banque bin/api
 
@@ -15,6 +15,9 @@ bin/api: src/API.cob $(MODULES) $(wildcard copybooks/*.cpy)
 
 web: bin/api
 	python3 web/server.py
+
+web-demo: bin/api
+	sh tests/demo.sh web
 
 run: bin/banque
 	./bin/banque

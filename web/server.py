@@ -5,7 +5,8 @@ Sert web/index.html et transmet chaque requete POST /api/<commande> au
 programme COBOL bin/api. Le serveur ne garde aucun etat : l'identifiant et le
 PIN accompagnent chaque requete et sont verifies par le COBOL (AUTH).
 
-Usage : python3 web/server.py [port]        (defaut 8080, 127.0.0.1 seulement)
+Usage : python3 web/server.py [--demo] [port]   (defaut 8080, 127.0.0.1 seulement)
+--demo : la page de connexion affiche les comptes d'essai de `make demo`.
 Variables d'environnement : celles de cobol-bank (COMPTES_FILE, ...) et
 API_BIN pour changer l'executable (defaut bin/api).
 """
@@ -87,6 +88,9 @@ def appeler_cobol(ligne):
         return {"ok": False, "statut": "99"}
 
 
+MODE_DEMO = False
+
+
 class Gestionnaire(BaseHTTPRequestHandler):
     server_version = "cobol-bank"
 
@@ -106,6 +110,8 @@ class Gestionnaire(BaseHTTPRequestHandler):
         if self.path in ("/", "/index.html"):
             with open(PAGE, "rb") as f:
                 self._envoyer(200, f.read(), "text/html; charset=utf-8")
+        elif self.path == "/api/config":
+            self._json(200, {"demo": MODE_DEMO})
         else:
             self._json(404, {"ok": False, "statut": "404"})
 
@@ -130,7 +136,10 @@ class Gestionnaire(BaseHTTPRequestHandler):
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    global MODE_DEMO
+    args = [a for a in sys.argv[1:] if a != "--demo"]
+    MODE_DEMO = len(args) != len(sys.argv) - 1
+    port = int(args[0]) if args else 8080
     if not os.path.exists(API_BIN):
         sys.exit("bin/api introuvable : lancer make")
     serveur = ThreadingHTTPServer(("127.0.0.1", port), Gestionnaire)
