@@ -1,0 +1,13 @@
+# executables
+bin/*
+!bin/.gitkeep
+
+# donnees runtime
+data/*.dat
+data/*.idx
+tests/*.dat
+tests/*.idx
+
+# relevés générés
+reports/*
+!reports/.gitkeep
