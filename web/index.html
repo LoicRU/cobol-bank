@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cobol-bank</title>
+<style>
+:root {
+  --fond: #f5f6f8; --carte: #ffffff; --texte: #1c2330; --doux: #647084;
+  --trait: #dde1e8; --accent: #1f5fbf; --accent-texte: #ffffff;
+  --ok: #17803d; --ko: #b3261e; --ok-fond: #e6f4ea; --ko-fond: #fce8e6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fond: #12161d; --carte: #1b212b; --texte: #e8ebf0; --doux: #9aa5b6;
+    --trait: #2c3441; --accent: #6ea3ff; --accent-texte: #0d1522;
+    --ok: #5fd08a; --ko: #ff8a80; --ok-fond: #14301f; --ko-fond: #3a1a18;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--fond); color: var(--texte);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 1.3rem; margin: 0; }
+h2 { font-size: 1.05rem; margin: 0 0 12px; }
+header { display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px; gap: 12px; }
+.carte { background: var(--carte); border: 1px solid var(--trait);
+  border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+label { display: block; font-size: .85rem; color: var(--doux); margin: 10px 0 4px; }
+input, select { width: 100%; padding: 10px 12px; font: inherit; color: inherit;
+  background: var(--fond); border: 1px solid var(--trait); border-radius: 8px; }
+input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button { font: inherit; cursor: pointer; border-radius: 8px; padding: 10px 16px;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--accent-texte); }
+button.secondaire { background: transparent; color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+.ligne { display: flex; gap: 12px; flex-wrap: wrap; }
+.ligne > * { flex: 1 1 140px; }
+.compte { display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 0; border-top: 1px solid var(--trait); gap: 12px; cursor: pointer; }
+.compte:first-of-type { border-top: 0; }
+.compte[aria-selected="true"] { font-weight: 600; }
+.num { font-variant-numeric: tabular-nums; }
+.type { font-size: .8rem; color: var(--doux); }
+.solde { font-size: 1.25rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.negatif { color: var(--ko); }
+.onglets { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.onglets button { flex: 0 0 auto; }
+.onglets button[aria-pressed="false"] { background: transparent; color: var(--accent); }
+#message { padding: 10px 12px; border-radius: 8px; margin-bottom: 16px; display: none; }
+#message.ok { display: block; background: var(--ok-fond); color: var(--ok); }
+#message.ko { display: block; background: var(--ko-fond); color: var(--ko); }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { text-align: right; padding: 6px 4px; border-top: 1px solid var(--trait);
+  font-variant-numeric: tabular-nums; }
+th { color: var(--doux); font-weight: 500; border-top: 0; }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+tr.refuse td { color: var(--doux); }
+.defile { overflow-x: auto; }
+.vide { color: var(--doux); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>cobol-bank</h1>
+    <div id="session" hidden>
+      <span id="bonjour"></span>
+      <button class="secondaire" id="quitter" type="button">Déconnexion</button>
+    </div>
+  </header>
+
+  <div id="message" role="status" aria-live="polite"></div>
+
+  <section id="vue-connexion" class="carte">
+    <h2>Connexion</h2>
+    <form id="form-connexion" autocomplete="off">
+      <label for="c-id">Identifiant</label>
+      <input id="c-id" inputmode="numeric" pattern="[0-9]{1,6}" required>
+      <label for="c-pin">PIN</label>
+      <input id="c-pin" type="password" inputmode="numeric" pattern="[0-9]{4,6}"
+             minlength="4" maxlength="6" required>
+      <p><button type="submit">Se connecter</button></p>
+    </form>
+    <p class="vide">Les comptes administrateur se gèrent en console.</p>
+  </section>
+
+  <div id="vue-compte" hidden>
+    <section class="carte">
+      <h2>Mes comptes</h2>
+      <div id="comptes" role="listbox" aria-label="Mes comptes"></div>
+    </section>
+
+    <section class="carte">
+      <h2>Opération</h2>
+      <div class="onglets" role="group" aria-label="Type d'opération">
+        <button type="button" data-op="depot" aria-pressed="true">Dépôt</button>
+        <button type="button" data-op="retrait" aria-pressed="false">Retrait</button>
+        <button type="button" data-op="virement" aria-pressed="false">Virement</button>
+      </div>
+      <form id="form-op">
+        <label for="o-compte" id="o-compte-lib">Compte</label>
+        <select id="o-compte"></select>
+        <div id="o-dest" hidden>
+          <label for="o-dst">Compte destinataire (10 chiffres)</label>
+          <input id="o-dst" inputmode="numeric" pattern="[0-9]{1,10}">
+        </div>
+        <label for="o-montant">Montant</label>
+        <input id="o-montant" inputmode="decimal" placeholder="0.00"
+               pattern="[0-9]{1,9}([.,][0-9]{1,2})?" required>
+        <p><button type="submit" id="o-valider">Valider</button></p>
+      </form>
+    </section>
+
+    <section class="carte">
+      <h2>Historique <span class="type" id="h-compte"></span></h2>
+      <div class="defile" id="historique"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+const MESSAGES = {
+  "22": "Existe déjà.", "23": "Introuvable.",
+  "61": "Configuration invalide : voir l'administrateur.",
+  "62": "Configuration invalide : voir l'administrateur.",
+  "63": "Configuration invalide : voir l'administrateur.",
+  "74": "Ce compte n'est pas à vous.",
+  "77": "Commande inconnue.",
+  "78": "Les comptes administrateur se gèrent en console.",
+  "79": "Saisie invalide.",
+  "81": "Identifiant ou PIN incorrect.",
+  "82": "Client bloqué : voir un administrateur.",
+  "83": "PIN invalide (4 à 6 chiffres).",
+  "90": "Opération interdite sur un compte épargne.",
+  "91": "Montant invalide.", "92": "Compte non actif.",
+  "93": "Solde insuffisant.", "94": "Dépassement de capacité du solde.",
+  "95": "Virement vers le même compte.", "96": "Plafond journalier dépassé.",
+  "98": "Fait, mais historique non écrit.", "99": "Erreur technique."
+};
+const TYPES = { D: "Dépôt", R: "Retrait", V: "Virement", I: "Intérêts", F: "Frais" };
+const $ = (id) => document.getElementById(id);
+
+let session = null;       // { id, pin, nom } : en mémoire seulement
+let comptes = [];
+let compteCourant = null; // numéro du compte affiché
+let operation = "depot";
+
+function message(texte, ok) {
+  const m = $("message");
+  m.textContent = texte;
+  m.className = texte ? (ok ? "ok" : "ko") : "";
+}
+function erreur(statut) {
+  message(MESSAGES[statut] || ("Erreur " + statut + "."), false);
+}
+async function appel(commande, donnees) {
+  try {
+    const r = await fetch("/api/" + commande, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: session.id, pin: session.pin, ...donnees })
+    });
+    return await r.json();
+  } catch (e) {
+    return { ok: false, statut: "99" };
+  }
+}
+const euro = (n) => n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function dessinerComptes() {
+  const zone = $("comptes");
+  zone.replaceChildren();
+  const sel = $("o-compte");
+  sel.replaceChildren();
+  if (comptes.length === 0) {
+    const p = document.createElement("p");
+    p.className = "vide"; p.textContent = "Aucun compte.";
+    zone.append(p);
+  }
+  for (const c of comptes) {
+    const ligne = document.createElement("div");
+    ligne.className = "compte"; ligne.tabIndex = 0;
+    ligne.setAttribute("role", "option");
+    ligne.setAttribute("aria-selected", String(c.num === compteCourant));
+    const gauche = document.createElement("div");
+    const num = document.createElement("div");
+    num.className = "num"; num.textContent = c.num;
+    const type = document.createElement("div");
+    type.className = "type";
+    let t = c.type === "E" ? "Épargne" : "Courant";
+    if (c.type === "C" && c.decouvert > 0) t += " · découvert autorisé " + euro(c.decouvert);
+    if (c.statut !== "A") t += " · " + (c.statut === "G" ? "gelé" : "clos");
+    type.textContent = t;
+    gauche.append(num, type);
+    const solde = document.createElement("div");
+    solde.className = "solde" + (c.solde < 0 ? " negatif" : "");
+    solde.textContent = euro(c.solde) + " €";
+    ligne.append(gauche, solde);
+    const choisir = () => { compteCourant = c.num; dessinerComptes(); chargerHistorique(); };
+    ligne.addEventListener("click", choisir);
+    ligne.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choisir(); } });
+    zone.append(ligne);
+    const opt = document.createElement("option");
+    opt.value = c.num; opt.textContent = c.num + " (" + (c.type === "E" ? "épargne" : "courant") + ")";
+    if (c.num === compteCourant) opt.selected = true;
+    sel.append(opt);
+  }
+}
+
+async function chargerComptes() {
+  const r = await appel("comptes", {});
+  if (!r.ok) { erreur(r.statut); return false; }
+  comptes = r.comptes;
+  if (!comptes.some((c) => c.num === compteCourant)) {
+    compteCourant = comptes.length ? comptes[0].num : null;
+  }
+  dessinerComptes();
+  return true;
+}
+
+async function chargerHistorique() {
+  const zone = $("historique");
+  zone.replaceChildren();
+  $("h-compte").textContent = compteCourant ? "· " + compteCourant : "";
+  if (!compteCourant) return;
+  const r = await appel("historique", { compte: compteCourant });
+  if (!r.ok) { erreur(r.statut); return; }
+  if (r.operations.length === 0) {
+    const p = document.createElement("p");
+    p.className = "vide"; p.textContent = "Aucune opération.";
+    zone.append(p); return;
+  }
+  const table = document.createElement("table");
+  const tete = table.createTHead().insertRow();
+  for (const h of ["Date", "Opération", "Montant", "Solde"]) {
+    const th = document.createElement("th"); th.textContent = h; tete.append(th);
+  }
+  const corps = table.createTBody();
+  for (const o of r.operations.slice().reverse()) {
+    const tr = corps.insertRow();
+    if (o.statut === "R") tr.className = "refuse";
+    const d = o.date, h = o.heure;
+    const entrant = o.dst === compteCourant && !(o.type === "V" && o.src === compteCourant);
+    const signe = o.statut === "R" ? "" : (entrant ? "+" : "−");
+    const libelle = TYPES[o.type] + (o.statut === "R" ? " refusé" : "")
+      + (o.motif && o.statut === "R" ? " (" + o.motif.toLowerCase() + ")" : "");
+    const cases = [
+      d.slice(6) + "/" + d.slice(4, 6) + "/" + d.slice(0, 4) + " " + h.slice(0, 2) + ":" + h.slice(2, 4),
+      libelle, signe + euro(o.montant), euro(o.solde)
+    ];
+    for (const texte of cases) { tr.insertCell().textContent = texte; }
+  }
+  zone.append(table);
+}
+
+function choisirOperation(op) {
+  operation = op;
+  for (const b of document.querySelectorAll(".onglets button")) {
+    b.setAttribute("aria-pressed", String(b.dataset.op === op));
+  }
+  $("o-dest").hidden = op !== "virement";
+  $("o-dst").required = op === "virement";
+  $("o-compte-lib").textContent = op === "virement" ? "Compte à débiter" : "Compte";
+}
+
+function afficher(connecte) {
+  $("vue-connexion").hidden = connecte;
+  $("vue-compte").hidden = !connecte;
+  $("session").hidden = !connecte;
+}
+
+$("form-connexion").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message("");
+  session = { id: $("c-id").value.trim(), pin: $("c-pin").value.trim(), nom: "" };
+  const r = await appel("connexion", {});
+  $("c-pin").value = "";
+  if (!r.ok) { session = null; erreur(r.statut); return; }
+  session.nom = r.nom;
+  $("bonjour").textContent = "Bonjour " + r.nom + " ";
+  afficher(true);
+  choisirOperation("depot");
+  if (await chargerComptes()) chargerHistorique();
+});
+
+$("quitter").addEventListener("click", () => {
+  session = null; comptes = []; compteCourant = null;
+  afficher(false); message("Déconnecté.", true);
+});
+
+for (const b of document.querySelectorAll(".onglets button")) {
+  b.addEventListener("click", () => choisirOperation(b.dataset.op));
+}
+
+$("form-op").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message("");
+  const bouton = $("o-valider");
+  bouton.disabled = true;
+  const montant = $("o-montant").value.trim();
+  const source = $("o-compte").value;
+  const donnees = operation === "virement"
+    ? { source, destination: $("o-dst").value.trim(), montant }
+    : { compte: source, montant };
+  const r = await appel(operation, donnees);
+  bouton.disabled = false;
+  if (!r.ok) { erreur(r.statut); await chargerComptes(); chargerHistorique(); return; }
+  message(r.statut === "98" ? MESSAGES["98"] : "Opération effectuée. Nouveau solde : " + euro(r.solde) + " €", true);
+  $("o-montant").value = ""; $("o-dst").value = "";
+  compteCourant = source;
+  await chargerComptes();
+  chargerHistorique();
+});
+</script>
+</body>
+</html>

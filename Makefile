@@ -1,14 +1,20 @@
 COBC   = cobc
 FLAGS  = -free -I copybooks
 
-.PHONY: all test clean run demo run-demo
+.PHONY: all test clean run demo run-demo web
 
-all: bin/banque
+all: bin/banque bin/api
 
 MODULES = src/PARAM.cob src/AUTH.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob src/RELEVE.cob src/BATCH-INT.cob
 
 bin/banque: src/BANQUE.cob $(MODULES) $(wildcard copybooks/*.cpy)
 	$(COBC) -x $(FLAGS) -o $@ src/BANQUE.cob $(MODULES)
+
+bin/api: src/API.cob $(MODULES) $(wildcard copybooks/*.cpy)
+	$(COBC) -x $(FLAGS) -o $@ src/API.cob $(filter-out src/RELEVE.cob src/BATCH-INT.cob,$(MODULES))
+
+web: bin/api
+	python3 web/server.py
 
 run: bin/banque
 	./bin/banque
@@ -40,7 +46,7 @@ bin/test_epargne: tests/test_epargne.cob src/PARAM.cob src/BATCH-INT.cob src/COM
 bin/test_trx: tests/test_trx.cob src/TRX.cob copybooks/TRX.cpy
 	$(COBC) -x $(FLAGS) -o $@ tests/test_trx.cob src/TRX.cob
 
-test: bin/test_trx bin/test_param bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_epargne bin/banque
+test: bin/test_trx bin/test_param bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_epargne bin/banque bin/api
 	./bin/test_trx
 	./bin/test_param
 	./bin/test_compte
@@ -50,7 +56,8 @@ test: bin/test_trx bin/test_param bin/test_compte bin/test_auth bin/test_batch b
 	./bin/test_epargne
 	sh tests/test_menu.sh
 	sh tests/test_demo.sh
+	sh tests/test_web.sh
 
 clean:
-	rm -f bin/banque bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_epargne bin/test_param bin/test_trx tests/*.dat tests/*.txt tests/*.csv tests/*.idx
-	rm -rf demo tests/DEMO_TMP
+	rm -f bin/banque bin/api bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_epargne bin/test_param bin/test_trx tests/*.dat tests/*.txt tests/*.csv tests/*.idx
+	rm -rf demo tests/DEMO_TMP tests/WEB_TMP
