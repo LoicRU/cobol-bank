@@ -16,9 +16,11 @@
 *>     82 client bloque              83 PIN invalide (4 a 6 chiffres)
 *>     99 action inconnue            autre : FILE STATUS d'une erreur d'E/S
 *>
-*> Regles : 3 echecs consecutifs bloquent le client (et ecrivent une alerte
-*> PIN_BLOQUE via FRAUDE) ; un succes remet le compteur a zero ; un client
-*> bloque est refuse meme avec le bon PIN.
+*> Regles : MAX_ECHECS_PIN echecs consecutifs bloquent le client (alerte
+*> PIN_BLOQUE via FRAUDE) ; ALERTE_ECHECS echecs consecutifs en moins de
+*> FENETRE_ECHECS_SEC secondes ecrivent une alerte ECHECS_RAPIDES sans
+*> bloquer ; un succes remet le compteur a zero ; un client bloque est
+*> refuse meme avec le bon PIN.
 *> Un identifiant inconnu et un mauvais PIN donnent le meme code (81).
 *>
 *> ATTENTION - empreinte du PIN : elle est calculee en COBOL pur (sel propre
@@ -47,6 +49,20 @@ WORKING-STORAGE SECTION.
 01 WS-FILENAME     PIC X(100).
 COPY "PARAMS.cpy".
 01 WS-PRM-STATUS   PIC XX.
+01 WS-DATE-NOW     PIC 9(8).
+01 WS-HEURE-NOW    PIC 9(8).
+01 WS-HEURE-NOW-R REDEFINES WS-HEURE-NOW.
+   05 WS-HN-HH     PIC 99.
+   05 WS-HN-MM     PIC 99.
+   05 WS-HN-SS     PIC 99.
+   05 FILLER       PIC 99.
+01 WS-SERIE-HEURE  PIC 9(6).
+01 WS-SERIE-HEURE-R REDEFINES WS-SERIE-HEURE.
+   05 WS-SH-HH     PIC 99.
+   05 WS-SH-MM     PIC 99.
+   05 WS-SH-SS     PIC 99.
+01 WS-SEC-NOW      PIC 9(12).
+01 WS-SEC-SERIE    PIC 9(12).
 01 WS-TOURS        PIC 9(5) VALUE 2000.
 01 WS-MULT         PIC 9(16) VALUE 6364136223846793.
 01 WS-PREMIER      PIC 9(18) VALUE 999999999999999989.
@@ -206,6 +222,12 @@ VERIFIER-PIN.
             END-IF
         ELSE
             MOVE "N" TO WS-BLOQUE-ICI
+            ACCEPT WS-DATE-NOW FROM DATE YYYYMMDD
+            ACCEPT WS-HEURE-NOW FROM TIME
+            IF CLI-ECHECS = 0
+                MOVE WS-DATE-NOW TO CLI-SERIE-DATE
+                MOVE WS-HEURE-NOW(1:6) TO CLI-SERIE-HEURE
+            END-IF
             ADD 1 TO CLI-ECHECS
             IF CLI-ECHECS >= PRM-MAX-ECHECS
                 MOVE "B" TO CLI-STATUT
@@ -220,6 +242,10 @@ VERIFIER-PIN.
             ELSE
                 IF WS-BLOQUE-ICI = "O"
                     PERFORM ALERTER-BLOCAGE
+                ELSE
+                    IF CLI-ECHECS = PRM-ALERTE-ECHECS
+                        PERFORM CONTROLER-FENETRE
+                    END-IF
                 END-IF
             END-IF
         END-IF
@@ -231,6 +257,22 @@ ALERTER-BLOCAGE.
     MOVE CLI-ID TO WS-FRD-CLI
     CALL "FRAUDE" USING WS-FRD-ACTION WS-FRD-CPT WS-FRD-CLI
                         WS-FRD-MONTANT WS-FRD-PLAFOND WS-FRD-STATUS.
+
+*> Echecs rapproches : alerte si la serie en cours a commence il y a moins
+*> de PRM-FENETRE-SEC secondes (un echec d'alerte ne change pas le resultat)
+CONTROLER-FENETRE.
+    MOVE CLI-SERIE-HEURE TO WS-SERIE-HEURE
+    COMPUTE WS-SEC-NOW =
+        FUNCTION INTEGER-OF-DATE(WS-DATE-NOW) * 86400
+        + WS-HN-HH * 3600 + WS-HN-MM * 60 + WS-HN-SS
+    COMPUTE WS-SEC-SERIE =
+        FUNCTION INTEGER-OF-DATE(CLI-SERIE-DATE) * 86400
+        + WS-SH-HH * 3600 + WS-SH-MM * 60 + WS-SH-SS
+    IF WS-SEC-NOW - WS-SEC-SERIE <= PRM-FENETRE-SEC
+        MOVE "E" TO WS-FRD-ACTION
+        PERFORM ALERTER-BLOCAGE
+        MOVE "B" TO WS-FRD-ACTION
+    END-IF.
 
 *> WS-PIN-OK = "O" si WS-PIN-IN fait 4 a 6 chiffres suivis d'espaces
 VALIDER-PIN.

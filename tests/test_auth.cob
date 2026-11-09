@@ -32,6 +32,7 @@ COPY "ALERTE.cpy" REPLACING LEADING ==ALR-== BY ==LA-==
 01 WS-FIN         PIC X.
 01 WS-NB-ALR      PIC 9(5).
 01 WS-NB-ALR-ATT  PIC 9(5).
+01 WS-REGLE-ATT   PIC X(16) VALUE "PIN_BLOQUE".
 01 WS-ACTION      PIC X.
 01 WS-PIN         PIC X(6).
 01 WS-NEWPIN      PIC X(6).
@@ -164,11 +165,17 @@ MAIN-PARA.
     MOVE "mauvais PIN (1er echec)" TO WS-LIBELLE
     PERFORM APPELER
     PERFORM VERIFIER
+    MOVE 0 TO WS-NB-ALR-ATT
+    MOVE "PIN_BLOQUE" TO WS-REGLE-ATT
+    PERFORM VERIF-ALERTE
     MOVE "mauvais PIN (2e echec)" TO WS-LIBELLE
     PERFORM APPELER
     PERFORM VERIFIER
     MOVE 2 TO WS-ECHECS-ATT
     PERFORM VERIF-ETAT
+    MOVE 1 TO WS-NB-ALR-ATT
+    MOVE "ECHECS_RAPIDES" TO WS-REGLE-ATT
+    PERFORM VERIF-ALERTE
 
     MOVE "82" TO WS-ATTENDU
     MOVE "mauvais PIN (3e echec : bloque)" TO WS-LIBELLE
@@ -177,7 +184,8 @@ MAIN-PARA.
     MOVE 3 TO WS-ECHECS-ATT
     MOVE "B" TO WS-STATUT-ATT
     PERFORM VERIF-ETAT
-    MOVE 1 TO WS-NB-ALR-ATT
+    MOVE 2 TO WS-NB-ALR-ATT
+    MOVE "PIN_BLOQUE" TO WS-REGLE-ATT
     PERFORM VERIF-ALERTE
 
     MOVE "1234" TO WS-PIN
@@ -254,8 +262,30 @@ MAIN-PARA.
     PERFORM APPELER
     PERFORM VERIFIER
 
-    *> toujours une seule alerte : seul le blocage en a produit une
+    *> fenetre expiree : serie vieille de plusieurs annees, 2 echecs -> pas
+    *> d'alerte rapprochee
+    MOVE "L" TO WS-ACTION
+    MOVE "0000" TO WS-PIN
+    MOVE "81" TO WS-ATTENDU
+    MOVE "echec 1 (nouvelle serie)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    PERFORM VIEILLIR-SERIE
+    MOVE "echec 2 hors fenetre : pas d'alerte" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE 2 TO WS-NB-ALR-ATT
+    MOVE "PIN_BLOQUE" TO WS-REGLE-ATT
+    PERFORM VERIF-ALERTE
+    MOVE "9999" TO WS-PIN
+    MOVE "00" TO WS-ATTENDU
+    MOVE "connexion : serie remise a zero" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    *> au total deux alertes : echecs rapides, puis blocage
     MOVE 1 TO WS-ID
+    MOVE 2 TO WS-NB-ALR-ATT
     PERFORM VERIF-ALERTE
 
     CALL "CBL_DELETE_FILE" USING "tests/CLIENTS_TEST.dat"
@@ -286,7 +316,7 @@ VERIFIER.
         ADD 1 TO WS-NB-ECHECS
     END-IF.
 
-*> Journal d'alertes : WS-NB-ALR-ATT alerte(s), derniere PIN_BLOQUE du client 1
+*> Journal d alertes : WS-NB-ALR-ATT alerte(s), derniere WS-REGLE-ATT du client 1
 VERIF-ALERTE.
     MOVE 0 TO WS-NB-ALR
     MOVE "N" TO WS-FIN
@@ -302,8 +332,9 @@ VERIF-ALERTE.
         END-PERFORM
         CLOSE F-ALR
     END-IF
-    IF WS-NB-ALR = WS-NB-ALR-ATT AND LA-REGLE = "PIN_BLOQUE"
-       AND LA-ID-CLIENT = 1
+    IF WS-NB-ALR = WS-NB-ALR-ATT
+       AND (WS-NB-ALR = 0 OR (LA-REGLE = WS-REGLE-ATT
+                              AND LA-ID-CLIENT = 1))
         DISPLAY "  PASS alerte : " WS-NB-ALR " au journal, "
                 LA-REGLE " client " LA-ID-CLIENT
     ELSE
@@ -311,6 +342,15 @@ VERIF-ALERTE.
                 WS-NB-ALR-ATT
         ADD 1 TO WS-NB-ECHECS
     END-IF.
+
+*> Recule de plusieurs annees le debut de la serie d'echecs du client WS-ID
+VIEILLIR-SERIE.
+    OPEN I-O F-CLI
+    MOVE WS-ID TO FT-ID
+    READ F-CLI KEY IS FT-ID
+    MOVE 20200101 TO FT-SERIE-DATE
+    REWRITE FT-REC
+    CLOSE F-CLI.
 
 *> Lit le client WS-ID directement dans le fichier
 LIRE-FICHIER.

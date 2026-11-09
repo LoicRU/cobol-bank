@@ -13,3 +13,7 @@
    05 CLI-STATUT       PIC X.
       88 CLI-ACTIF     VALUE "A".
       88 CLI-BLOQUE    VALUE "B".
+*> Debut de la serie d'echecs de PIN en cours (date AAAAMMJJ, heure HHMMSS) ;
+*> sert a reperer des echecs rapproches. Sans signification si CLI-ECHECS = 0.
+   05 CLI-SERIE-DATE  PIC 9(8).
+   05 CLI-SERIE-HEURE PIC 9(6).
