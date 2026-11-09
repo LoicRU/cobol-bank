@@ -22,6 +22,7 @@
 *>   FENETRE_ECHECS_SEC 300    entier 1 a 86400
 *>   TAUX_EPARGNE_PCT 3.00     0 a 100 (2 decimales)
 *>   TAUX_AGIOS_PCT   12.00    0 a 100 (2 decimales, agios sur solde negatif)
+*>   MAX_PROGRAMMES_CLIENT 10  entier 1 a 99 (virements programmes actifs par client)
 *>   MAX_COMPTES_CLIENT 5      entier 1 a 99 (comptes ouverts par un client)
 *>   MAX_INSCRIPTIONS_HEURE 20 entier 1 a 9999 (inscriptions libres par heure)
 *> Fichier : variable d'environnement PARAMS_FILE, sinon
@@ -102,7 +103,8 @@ VALEURS-PAR-DEFAUT.
     MOVE 0.0300 TO LK-PRM-TAUX-EPARGNE
     MOVE 5 TO LK-PRM-MAX-COMPTES
     MOVE 20 TO LK-PRM-MAX-INSCRIPTIONS
-    MOVE 0.1200 TO LK-PRM-TAUX-AGIOS.
+    MOVE 0.1200 TO LK-PRM-TAUX-AGIOS
+    MOVE 10 TO LK-PRM-MAX-PROGRAMMES.
 
 *> Ignore lignes vides et commentaires ; sinon CLE=valeur
 TRAITER-LIGNE.
@@ -147,6 +149,9 @@ APPLIQUER-CLE.
         WHEN "MAX_INSCRIPTIONS_HEURE"
             MOVE 1 TO WS-MIN-V
             MOVE 9999 TO WS-MAX-V
+        WHEN "MAX_PROGRAMMES_CLIENT"
+            MOVE 1 TO WS-MIN-V
+            MOVE 99 TO WS-MAX-V
         WHEN "TAUX_AGIOS_PCT"
             MOVE 2 TO WS-DEC-MAX
             MOVE 0 TO WS-MIN-V
@@ -187,6 +192,8 @@ APPLIQUER-CLE.
                     MOVE WS-NUM TO LK-PRM-MAX-COMPTES
                 WHEN "MAX_INSCRIPTIONS_HEURE"
                     MOVE WS-NUM TO LK-PRM-MAX-INSCRIPTIONS
+                WHEN "MAX_PROGRAMMES_CLIENT"
+                    MOVE WS-NUM TO LK-PRM-MAX-PROGRAMMES
                 WHEN "TAUX_AGIOS_PCT"
                     COMPUTE LK-PRM-TAUX-AGIOS = WS-NUM / 100
                 WHEN "TAUX_EPARGNE_PCT"

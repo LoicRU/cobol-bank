@@ -6,7 +6,9 @@ export DEMO_DIR=$T/WEB_TMP
 export PARAMS_FILE=$T/WEB_AUCUN_PARAMS.cfg
 export CLIENTS_FILE=$DEMO_DIR/CLIENTS.dat COMPTES_FILE=$DEMO_DIR/COMPTES.dat
 export TRX_FILE=$DEMO_DIR/TRANSACTIONS.dat ALERTES_FILE=$DEMO_DIR/ALERTES.dat
-export BATCH_FILE=$DEMO_DIR/BATCH.dat
+export PROGRAMMES_FILE=$DEMO_DIR/PROGRAMMES.dat
+export BATCH_FILE=$DEMO_DIR/BATCH.dat RELEVE_DIR=$DEMO_DIR/reports
+AUJ=$(date +%Y%m%d)
 PORT=8097
 URL=http://127.0.0.1:$PORT
 NB_ECHECS=0
@@ -50,6 +52,41 @@ verifie "API : PIN invalide (83)" "$(api 'inscription 0 12 Zoe')" '"statut":"83"
 verifie "API : ouverture epargne" "$(api 'ouvrir 5 1357 E')" '"num":"1000000006","type":"E"'
 verifie "API : type invalide (87)" "$(api 'ouvrir 5 1357 X')" '"statut":"87"'
 verifie "API : historique de l'ouverture" "$(api 'historique 5 1357 1000000006')" '"motif":"OUVERTURE DE COMPTE"'
+
+echo "API : releve"
+verifie "releve texte" "$(api "releve 3 5555 1000000003 $AUJ $AUJ T")" '"fichier":"RELEVE_1000000003_'"$AUJ"'_'"$AUJ"'.txt","operations":'
+verifie "releve CSV" "$(api "releve 3 5555 1000000003 $AUJ $AUJ C")" '.csv"'
+verifie "releve : fichier ecrit et coherent" "$(cat $DEMO_DIR/reports/RELEVE_1000000003_${AUJ}_${AUJ}.txt)" 'Verification : OK'
+verifie "releve : compte d'un autre (74)" "$(api "releve 2 4321 1000000003 $AUJ $AUJ T")" '"statut":"74"'
+verifie "releve : periode invalide (73)" "$(api "releve 3 5555 1000000003 20269999 $AUJ T")" '"statut":"73"'
+verifie "releve : fin avant debut (73)" "$(api "releve 3 5555 1000000003 $AUJ 20200101 T")" '"statut":"73"'
+verifie "releve : format inconnu (79)" "$(api "releve 3 5555 1000000003 $AUJ $AUJ X")" '"statut":"79"'
+verifie "releve : compte inconnu (23)" "$(api "releve 3 5555 1999999999 $AUJ $AUJ T")" '"statut":"23"'
+verifie "releve : refuse a l'admin (78)" "$(api "releve 1 1234 1000000003 $AUJ $AUJ T")" '"statut":"78"'
+
+echo "API : virements programmes"
+DEMAIN=$(date -d tomorrow +%Y%m%d)
+verifie "programmes d'Alice : mensuel" "$(api 'programmes 2 4321')" '"id":1,"client":2,"src":"1000000001","dst":"1000000003","montant":30.00'
+verifie "programmes d'Alice : unique du jour" "$(api 'programmes 2 4321')" '"freq":"U","statut":"A"'
+verifie "programmes de Bob : aucun" "$(api 'programmes 3 5555')" '"programmes":\[\]'
+verifie "programmer" "$(api "programmer 2 4321 1000000001 1000000003 5 $DEMAIN M")" '"id":3'
+verifie "programmer : date passee (52)" "$(api 'programmer 2 4321 1000000001 1000000003 5 20200101 U')" '"statut":"52"'
+verifie "programmer : frequence invalide (79)" "$(api "programmer 2 4321 1000000001 1000000003 5 $DEMAIN X")" '"statut":"79"'
+verifie "programmer : montant invalide (79)" "$(api "programmer 2 4321 1000000001 1000000003 abc $DEMAIN U")" '"statut":"79"'
+verifie "programmer : compte d'un autre (74)" "$(api "programmer 2 4321 1000000003 1000000001 5 $DEMAIN U")" '"statut":"74"'
+verifie "programmer : destinataire inconnu (23)" "$(api "programmer 2 4321 1000000001 1999999999 5 $DEMAIN U")" '"statut":"23"'
+verifie "programmer : epargne vers un tiers (90)" "$(api "programmer 2 4321 1000000005 1000000003 5 $DEMAIN U")" '"statut":"90"'
+verifie "programmer : refuse a l'admin (78)" "$(api "programmer 1 1234 1000000001 1000000003 5 $DEMAIN U")" '"statut":"78"'
+verifie "annuler le programme d'un autre (55)" "$(api 'annuler 3 5555 3')" '"statut":"55"'
+verifie "annuler" "$(api 'annuler 2 4321 3')" '"ok":true'
+verifie "annuler deux fois (56)" "$(api 'annuler 2 4321 3')" '"statut":"56"'
+verifie "annuler un inconnu (54)" "$(api 'annuler 2 4321 99')" '"statut":"54"'
+verifie "admin-programmes" "$(api 'admin-programmes 1 1234')" '"statut":"X"'
+verifie "admin-programmes refuse a un client (78)" "$(api 'admin-programmes 2 4321')" '"statut":"78"'
+verifie "admin-echeances refuse a un client (78)" "$(api 'admin-echeances 2 4321')" '"statut":"78"'
+verifie "admin-echeances : 1 virement" "$(api 'admin-echeances 1 1234')" '"ok":true,"executes":1,"refuses":0'
+verifie "admin-echeances : rejeu sans doublon" "$(api 'admin-echeances 1 1234')" '"executes":0,"refuses":0'
+verifie "programme unique termine" "$(api 'programmes 2 4321')" '"freq":"U","statut":"T","executions":1'
 
 echo "API : commandes administrateur"
 verifie "admin-connexion" "$(api 'admin-connexion 1 1234')" '"nom":"Admin"'
@@ -112,6 +149,12 @@ post ouvrir '{"id":"6","pin":"2468","type":"C"}' > /dev/null
 post ouvrir '{"id":"6","pin":"2468","type":"E"}' > /dev/null
 post ouvrir '{"id":"6","pin":"2468","type":"C"}' > /dev/null
 verifie "ouverture : 6e compte refuse (88)" "$(post ouvrir '{"id":"6","pin":"2468","type":"C"}')" '"statut": "88"'
+verifie "releve via HTTP : texte" "$(post releve '{"id":"3","pin":"5555","compte":"1000000003","debut":"'$AUJ'","fin":"'$AUJ'","format":"T"}')" 'RELEVE DE COMPTE'
+verifie "releve via HTTP : CSV" "$(post releve '{"id":"3","pin":"5555","compte":"1000000003","debut":"'$AUJ'","fin":"'$AUJ'","format":"C"}')" 'Verification;OK'
+verifie "releve via HTTP : compte d'un autre (74)" "$(post releve '{"id":"2","pin":"4321","compte":"1000000003","debut":"'$AUJ'","fin":"'$AUJ'","format":"T"}')" '"statut": "74"'
+verifie "releve via HTTP : date invalide refusee" "$(post releve '{"id":"3","pin":"5555","compte":"1000000003","debut":"2026-11-01","fin":"'$AUJ'","format":"T"}')" '"statut": "79"'
+verifie "releve via HTTP : injection refusee" "$(post releve '{"id":"3","pin":"5555","compte":"1000000003 ../x","debut":"'$AUJ'","fin":"'$AUJ'","format":"T"}')" '"statut": "79"'
+verifie "releve via HTTP : format refuse" "$(post releve '{"id":"3","pin":"5555","compte":"1000000003","debut":"'$AUJ'","fin":"'$AUJ'","format":"X"}')" '"statut": "79"'
 verifie "admin via HTTP : connexion" "$(post admin-connexion '{"id":"1","pin":"1234"}')" '"nom": "Admin"'
 verifie "admin via HTTP : refuse a un client (78)" "$(post admin-clients '{"id":"3","pin":"5555"}')" '"statut": "78"'
 verifie "admin via HTTP : clients" "$(post admin-clients '{"id":"1","pin":"1234"}')" '"nom": "Alice"'
@@ -128,6 +171,16 @@ verifie "admin via HTTP : periode invalide refusee" "$(post admin-batch '{"id":"
 verifie "admin via HTTP : batch" "$(post admin-batch '{"id":"1","pin":"1234","periode":"202612"}')" '"periode": "202612"'
 verifie "admin via HTTP : batch, agios au resume" "$(post admin-batch '{"id":"1","pin":"1234","periode":"202701"}')" '"agios": '
 verifie "admin via HTTP : batch deja traite (71)" "$(post admin-batch '{"id":"1","pin":"1234","periode":"202612"}')" '"statut": "71"'
+verifie "programmes via HTTP" "$(post programmes '{"id":"2","pin":"4321"}')" '"montant": 30.0'
+verifie "programmer via HTTP" "$(post programmer '{"id":"2","pin":"4321","source":"1000000001","destination":"1000000003","montant":"5","date":"'$DEMAIN'","freq":"U"}')" '"id": 4'
+verifie "programmer via HTTP : date invalide refusee" "$(post programmer '{"id":"2","pin":"4321","source":"1000000001","destination":"1000000003","montant":"5","date":"2026-12-01","freq":"U"}')" '"statut": "79"'
+verifie "programmer via HTTP : frequence refusee" "$(post programmer '{"id":"2","pin":"4321","source":"1000000001","destination":"1000000003","montant":"5","date":"'$DEMAIN'","freq":"X"}')" '"statut": "79"'
+verifie "programmer via HTTP : injection refusee" "$(post programmer '{"id":"2","pin":"4321","source":"1000000001 9","destination":"1000000003","montant":"5","date":"'$DEMAIN'","freq":"U"}')" '"statut": "79"'
+verifie "annuler via HTTP" "$(post annuler '{"id":"2","pin":"4321","programme":"4"}')" '"ok": true'
+verifie "annuler via HTTP : numero invalide refuse" "$(post annuler '{"id":"2","pin":"4321","programme":"a b"}')" '"statut": "79"'
+verifie "admin via HTTP : programmes" "$(post admin-programmes '{"id":"1","pin":"1234"}')" '"programmes": \['
+verifie "admin via HTTP : programmes refuse a un client (78)" "$(post admin-programmes '{"id":"2","pin":"4321"}')" '"statut": "78"'
+verifie "admin via HTTP : echeances" "$(post admin-echeances '{"id":"1","pin":"1234"}')" '"executes": 0'
 absent=$(grep -c "5555\|1234" $T/WEB_serveur.log)
 if [ "$absent" -eq 0 ]; then echo "  PASS le PIN n'apparait pas dans les logs"
 else echo "  FAIL le PIN apparait dans les logs"; NB_ECHECS=$((NB_ECHECS + 1)); fi

@@ -12,7 +12,8 @@ Mini core-banking en **GnuCOBOL** : fichiers indexés, menu console, authentific
 - **Fraude** : plafond journalier de sorties (refus) et montant anormal par rapport à la moyenne du compte (alerte), journal d'alertes consultable par l'administrateur.
 - **Batch mensuel** : intérêts (taux propre à l'épargne), frais de tenue et agios sur découvert (comptes courants seulement), rejouable sans doublon (une période déjà traitée est refusée).
 - **Inscription et ouverture de comptes en libre-service** : un visiteur crée son propre client (nom + PIN), puis chaque client s'ouvre jusqu'à 5 comptes (courant ou épargne), en console comme sur le web.
-- **Interface web** (client et administrateur) : inscription, ouverture de compte, consultation des comptes, dépôt, retrait, virement et historique dans le navigateur ; l'administrateur y gère clients, comptes, alertes et batch. Un petit serveur Python appelle le COBOL.
+- **Interface web** (client et administrateur) : inscription, ouverture de compte, consultation des comptes, dépôt, retrait, virement, historique et téléchargement des relevés (texte ou CSV) dans le navigateur ; l'administrateur y gère clients, comptes, alertes et batch. Un petit serveur Python appelle le COBOL.
+- **Virements programmés** : un client programme un virement unique ou mensuel (jusqu'à `MAX_PROGRAMMES_CLIENT` actifs) ; l'administrateur exécute les échéances du jour à la demande (console ou web), avec les mêmes règles que tout virement.
 - **Relevés** : fichier texte formaté ou export CSV sur une période, avec contrôle de cohérence (solde initial + crédits − débits = solde final).
 
 ## Installation
@@ -201,7 +202,7 @@ Fonctionnement : `web/index.html` appelle `POST /api/<commande>` sur `web/server
 
 > Usage **local uniquement** : pas de HTTPS ni de session, le PIN circule en clair entre le navigateur et le serveur. Ne pas exposer ce serveur sur un réseau.
 
-Commandes client de `bin/api` : `inscription`, `connexion`, `comptes`, `ouvrir`, `depot`, `retrait`, `virement`, `historique` (200 dernières opérations). Commandes administrateur (préfixe `admin-`) : `admin-connexion`, `admin-clients`, `admin-comptes`, `admin-alertes` (200 dernières), `admin-bloquer`, `admin-debloquer`, `admin-modifier` (plafond, découvert, statut), `admin-batch` (période AAAAMM, mois courant par défaut). Codes ajoutés : 74 (compte d'un autre client), 77 (commande inconnue), 78 (rôle non autorisé : commande client refusée à un administrateur et inversement), 79 (paramètre invalide).
+Commandes client de `bin/api` : `inscription`, `connexion`, `comptes`, `ouvrir`, `depot`, `retrait`, `virement`, `historique` (200 dernières opérations), `programmer` (source, destination, montant, date AAAAMMJJ, fréquence U ou M), `programmes`, `annuler` (numéro de programme), `releve` (compte, dates AAAAMMJJ, format T ou C : le serveur lit le fichier écrit par `RELEVE` et le renvoie au navigateur, qui le télécharge). Commandes administrateur (préfixe `admin-`) : `admin-connexion`, `admin-clients`, `admin-comptes`, `admin-alertes` (200 dernières), `admin-bloquer`, `admin-debloquer`, `admin-modifier` (plafond, découvert, statut), `admin-batch` (période AAAAMM, mois courant par défaut), `admin-programmes` (tous les programmes), `admin-echeances` (exécute les échéances du jour ; renvoie le nombre de virements faits et refusés). Codes ajoutés : 74 (compte d'un autre client), 77 (commande inconnue), 78 (rôle non autorisé : commande client refusée à un administrateur et inversement), 79 (paramètre invalide).
 
 ### Espace administrateur (web)
 
@@ -219,6 +220,7 @@ Se connecter avec un compte administrateur (identifiant 1 sur la démo, PIN 1234
 | 6 Relevé de compte | 6 Relevé d'un compte |
 | 7 Changer mon PIN | 7 Changer mon PIN |
 | 8 Ouvrir un compte | 8 Modifier un compte |
+| 9 Virements programmés | 9 Virements programmés |
 | 0 Déconnexion | 0 Déconnexion |
 
 Le menu de départ propose aussi `2 Créer mon compte client` (inscription libre).
@@ -250,7 +252,7 @@ Un client n'accède qu'à ses propres comptes (code 74 sinon). Le rôle administ
 ```
 src/          programme principal, modules et API.cob (interface web)
 web/          serveur Python et page HTML
-copybooks/    structures d'enregistrements (COMPTE, CLIENT, TRX, ALERTE, BATCH, RELEVE, PARAMS)
+copybooks/    structures d'enregistrements (COMPTE, CLIENT, TRX, ALERTE, BATCH, RELEVE, PARAMS, PROGRAMME)
 config/       parametres.cfg
 data/         fichiers de données (ignorés par Git)
 reports/      relevés et rapports générés (ignorés par Git)
@@ -266,7 +268,7 @@ tests/        suites de tests
 | `FRAUDE` | plafond journalier, montant anormal, alertes d'échecs de PIN | 00, 96 (plafond), 97 (alerte seule) |
 | `RELEVE` | relevé de compte (texte ou CSV) sur une période | 00, 23, 73, 74, 75 (incohérent), 76 (format inconnu) |
 | `BATCH-INT` | intérêts et frais mensuels | 00, 71 (déjà traitée), 72 (interrompue), 73 |
-| `API` | une commande client ou administrateur en JSON pour l'interface web (utilise AUTH, COMPTE, BATCH-INT) | 00 et codes d'AUTH / COMPTE, 74, 77, 78, 79 |
+| `API` | une commande client ou administrateur en JSON pour l'interface web (utilise AUTH, COMPTE, BATCH-INT, RELEVE) | 00 et codes d'AUTH / COMPTE, 74, 77, 78, 79 |
 | `PARAM` | lecture et validation de la configuration | 00, 61, 62, 63 |
 
 Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexés ; `TRANSACTIONS.dat` et `ALERTES.dat` sont des journaux en ajout seul.
@@ -297,11 +299,12 @@ Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexé
 | `MAX_INSCRIPTIONS_HEURE` | 20 | inscriptions libres par heure ; au-delà, refus (code 85) et alerte `INSCRIPTIONS` |
 | `FRAIS_TENUE` | 2.00 | frais mensuels de tenue de compte |
 | `TAUX_AGIOS_PCT` | 12.00 | taux annuel des agios sur solde négatif (%) |
+| `MAX_PROGRAMMES_CLIENT` | 10 | virements programmés actifs par client (1 à 99) |
 | `MAX_ECHECS_PIN` | 3 | échecs de PIN avant blocage |
 | `ALERTE_ECHECS` | 2 | échecs de PIN consécutifs déclenchant l'alerte `ECHECS_RAPIDES` (sans blocage) |
 | `FENETRE_ECHECS_SEC` | 300 | durée (secondes) dans laquelle ces échecs doivent survenir |
 
-Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIENTS_FILE`, `COMPTES_FILE`, `TRX_FILE`, `ALERTES_FILE`, `BATCH_FILE`, `BATCH_REPORT_DIR`, `RELEVE_DIR`.
+Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIENTS_FILE`, `COMPTES_FILE`, `TRX_FILE`, `ALERTES_FILE`, `BATCH_FILE`, `BATCH_REPORT_DIR`, `RELEVE_DIR`, `PROGRAMMES_FILE`.
 
 ## Tests
 
@@ -314,10 +317,11 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 | `test_auth` | création, PIN, blocage, déblocage, changement de PIN, inscription libre (validations, limite horaire, alerte) |
 | `test_batch` | intérêts, frais, arrondis, dépassement, rejeu, période interrompue |
 | `test_releve` | périodes, soldes (y compris négatifs), cohérence, droits, export CSV, bout en bout |
+| `test_prog` | virements programmés : création et refus (51 à 56), exécution unique et mensuelle, rattrapage, refus réessayés, annulation, rejeu sans doublon |
 | `test_epargne` | batch : intérêts d'épargne, pas de frais sur l'épargne, frais limités par le découvert, agios sur soldes négatifs |
 | `test_trx` | numérotation de l'historique |
 | `test_menu.sh` | scénario complet par saisies redirigées (client, admin, blocage, batch, connexion par nom) |
-| `test_web.sh` | `bin/api` et serveur HTTP : inscription, ouverture de compte, connexion, comptes, opérations, commandes administrateur (rôles, blocage, modification, batch), refus, injections de paramètres, PIN absent des logs |
+| `test_web.sh` | `bin/api` et serveur HTTP : inscription, ouverture de compte, connexion, comptes, opérations, relevés (propriétaire, périodes, injections), commandes administrateur (rôles, blocage, modification, batch), refus, injections de paramètres, PIN absent des logs |
 | `test_demo.sh` | le jeu de démonstration produit les soldes, alertes et relevés annoncés |
 
 ## Limites connues
@@ -328,3 +332,4 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 - Inscription libre sans vérification d'identité (limitée seulement par `MAX_INSCRIPTIONS_HEURE`) ; un nouveau client peut porter le même nom qu'un autre.
 - Agios : un seul taux, calculé sur le solde d'ouverture de la période (pas de calcul au jour le jour).
 - Le relevé est un fichier texte ; il n'y a pas d'export PDF.
+- Virements programmés : fréquence unique ou mensuelle seulement ; les échéances ne sont exécutées que sur demande de l'administrateur (pas de démon) ; un refus pour solde ou plafond (93, 96) est réessayé à l'exécution suivante, tout autre refus passe le programme en erreur ; l'annulation par l'administrateur n'existe qu'en console.

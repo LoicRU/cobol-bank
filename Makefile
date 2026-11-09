@@ -5,13 +5,13 @@ FLAGS  = -free -I copybooks
 
 all: bin/banque bin/api
 
-MODULES = src/PARAM.cob src/AUTH.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob src/RELEVE.cob src/BATCH-INT.cob
+MODULES = src/PARAM.cob src/AUTH.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob src/RELEVE.cob src/BATCH-INT.cob src/PROG.cob
 
 bin/banque: src/BANQUE.cob $(MODULES) $(wildcard copybooks/*.cpy)
 	$(COBC) -x $(FLAGS) -o $@ src/BANQUE.cob $(MODULES)
 
 bin/api: src/API.cob $(MODULES) $(wildcard copybooks/*.cpy)
-	$(COBC) -x $(FLAGS) -o $@ src/API.cob $(filter-out src/RELEVE.cob,$(MODULES))
+	$(COBC) -x $(FLAGS) -o $@ src/API.cob $(MODULES)
 
 web: bin/api
 	python3 web/server.py
@@ -22,7 +22,7 @@ web-demo: bin/banque bin/api
 run: bin/banque
 	./bin/banque
 
-demo: bin/banque
+demo: bin/banque bin/api
 	sh tests/demo.sh
 
 run-demo: bin/banque
@@ -46,10 +46,13 @@ bin/test_param: tests/test_param.cob src/PARAM.cob src/AUTH.cob src/FRAUDE.cob s
 bin/test_epargne: tests/test_epargne.cob src/PARAM.cob src/BATCH-INT.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob copybooks/BATCH.cpy copybooks/COMPTE.cpy copybooks/TRX.cpy copybooks/ALERTE.cpy copybooks/PARAMS.cpy
 	$(COBC) -x $(FLAGS) -o $@ tests/test_epargne.cob src/BATCH-INT.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob src/PARAM.cob
 
+bin/test_prog: tests/test_prog.cob src/PARAM.cob src/PROG.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob copybooks/PROGRAMME.cpy copybooks/COMPTE.cpy copybooks/TRX.cpy copybooks/ALERTE.cpy copybooks/PARAMS.cpy
+	$(COBC) -x $(FLAGS) -o $@ tests/test_prog.cob src/PROG.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob src/PARAM.cob
+
 bin/test_trx: tests/test_trx.cob src/TRX.cob copybooks/TRX.cpy
 	$(COBC) -x $(FLAGS) -o $@ tests/test_trx.cob src/TRX.cob
 
-test: bin/test_trx bin/test_param bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_epargne bin/banque bin/api
+test: bin/test_trx bin/test_param bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_epargne bin/test_prog bin/banque bin/api
 	./bin/test_trx
 	./bin/test_param
 	./bin/test_compte
@@ -57,10 +60,11 @@ test: bin/test_trx bin/test_param bin/test_compte bin/test_auth bin/test_batch b
 	./bin/test_batch
 	./bin/test_releve
 	./bin/test_epargne
+	./bin/test_prog
 	sh tests/test_menu.sh
 	sh tests/test_demo.sh
 	sh tests/test_web.sh
 
 clean:
-	rm -f bin/banque bin/api bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_epargne bin/test_param bin/test_trx tests/*.dat tests/*.txt tests/*.csv tests/*.idx
+	rm -f bin/banque bin/api bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_epargne bin/test_prog bin/test_param bin/test_trx tests/*.dat tests/*.txt tests/*.csv tests/*.idx
 	rm -rf demo tests/DEMO_TMP tests/WEB_TMP

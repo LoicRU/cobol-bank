@@ -15,6 +15,13 @@
 *>   virement   id pin source destination montant
 *>   historique id pin compte
 *>   ouvrir     id pin type            (type C courant ou E epargne)
+*>   programmer id pin source destination montant date freq   (virement
+*>                                      programme ; date AAAAMMJJ ; freq U ou M)
+*>   programmes id pin                 les virements programmes du client
+*>   annuler    id pin programme       annule un de ses virements programmes
+*>   releve     id pin compte debut fin format   (dates AAAAMMJJ, format T ou C ;
+*>                                      ecrit le releve via RELEVE, repond
+*>                                      avec le nom du fichier)
 *>   inscription 0 pin nom             (sans authentification ; le nom ecrit
 *>                                      les espaces en "_" ; role client)
 *> Commandes administrateur (role A obligatoire, sinon 78 ; les commandes
@@ -27,12 +34,16 @@
 *>   admin-debloquer id pin client
 *>   admin-modifier  id pin compte plafond decouvert statut   (statut A, G ou C ;
 *>                                     decouvert 0 obligatoire sur epargne)
+*>   admin-programmes id pin           tous les virements programmes
+*>   admin-echeances id pin            execute les echeances du jour (PROG "E")
 *>   admin-batch     id pin [AAAAMM]   traitement mensuel (defaut : mois courant)
 *> Reponse : {"ok":true,...} ou {"ok":false,"statut":"NN"}
 *> Statuts : ceux de AUTH et COMPTE, plus
 *>     74 compte qui n'est pas au client   77 commande inconnue
 *>     78 role non autorise (commande client refusee a un administrateur et
-*>        inversement)   71 72 73 : statuts du traitement mensuel
+*>        inversement)   71 72 73 : statuts du traitement mensuel ; releve :
+*>        73 periode invalide, 75 releve incoherent (ecrit quand meme),
+*>        76 format inconnu ; programmes : 51 a 56 (voir PROG)
 *>     79 parametre invalide (compte ou montant)
 *>     83 PIN invalide  84 nom invalide  85 trop d'inscriptions
 *>     87 type invalide 88 trop de comptes
@@ -80,11 +91,22 @@ COPY "COMPTE.cpy".
 COPY "CLIENT.cpy".
 COPY "PARAMS.cpy".
 COPY "BATCH.cpy".
+COPY "RELEVE.cpy".
+COPY "PROGRAMME.cpy".
+01 WS-PACT          PIC X.
+01 WS-NB-OK         PIC 9(5).
+01 WS-NB-KO         PIC 9(5).
+01 WS-PROG-DERNIER  PIC 9(8).
+01 WS-DEB           PIC 9(8).
+01 WS-FIN-P         PIC 9(8).
+01 WS-FORMAT-REL    PIC X.
+01 WS-EXT           PIC X(4).
 01 WS-CLI-NAME      PIC X(100).
 01 WS-ALR-NAME      PIC X(100).
 01 WS-ROLE          PIC X.
 01 WS-ADMIN         PIC X VALUE "N".
 01 WS-P4            PIC X(32).
+01 WS-P5            PIC X(32).
 01 WS-PERIODE       PIC 9(6).
 01 WS-AUJ           PIC 9(8).
 01 WS-PLAF          PIC 9(9)V99.
@@ -95,7 +117,7 @@ COPY "BATCH.cpy".
 01 WS-CPT-NAME      PIC X(100).
 01 WS-TRX-NAME      PIC X(100).
 01 WS-LIGNE         PIC X(200).
-01 WS-CMD           PIC X(16).
+01 WS-CMD           PIC X(20).
 01 WS-ID-TXT        PIC X(20).
 01 WS-PIN           PIC X(6).
 01 WS-PIN-TXT       PIC X(20).
@@ -153,10 +175,10 @@ MAIN-PARA.
     END-ACCEPT
 
     MOVE SPACES TO WS-LIGNE WS-CMD WS-ID-TXT WS-PIN-TXT
-                   WS-P1 WS-P2 WS-P3 WS-P4
+                   WS-P1 WS-P2 WS-P3 WS-P4 WS-P5
     ACCEPT WS-LIGNE
     UNSTRING WS-LIGNE DELIMITED BY ALL SPACE
-        INTO WS-CMD WS-ID-TXT WS-PIN-TXT WS-P1 WS-P2 WS-P3 WS-P4
+        INTO WS-CMD WS-ID-TXT WS-PIN-TXT WS-P1 WS-P2 WS-P3 WS-P4 WS-P5
     END-UNSTRING
 
     IF WS-CMD = "inscription"
@@ -188,6 +210,12 @@ MAIN-PARA.
             WHEN "virement"   PERFORM CMD-VIREMENT
             WHEN "historique" PERFORM CMD-HISTORIQUE
             WHEN "ouvrir"     PERFORM CMD-OUVRIR
+            WHEN "releve"     PERFORM CMD-RELEVE
+            WHEN "programmer" PERFORM CMD-PROGRAMMER
+            WHEN "programmes" PERFORM CMD-PROGRAMMES
+            WHEN "annuler"    PERFORM CMD-ANNULER-PROG
+            WHEN "admin-programmes" PERFORM CMD-PROGRAMMES
+            WHEN "admin-echeances"  PERFORM CMD-ADMIN-ECHEANCES
             WHEN "admin-connexion" PERFORM CMD-CONNEXION
             WHEN "admin-clients"   PERFORM CMD-ADMIN-CLIENTS
             WHEN "admin-comptes"   PERFORM CMD-COMPTES
@@ -489,6 +517,199 @@ ECRIRE-OPERATION.
     DISPLAY ',"solde":' FUNCTION TRIM(WS-ED-S) ',"statut":"'
             FT-STATUT '","motif":"' FUNCTION TRIM(FT-MOTIF) '"}'
             WITH NO ADVANCING.
+
+*> releve : WS-P1 compte, WS-P2 debut, WS-P3 fin, WS-P4 format (T ou C)
+CMD-RELEVE.
+    MOVE WS-P1 TO WS-TXT
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O"
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-NUM-VAL TO WS-SRC
+    MOVE WS-P2 TO WS-TXT
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O" OR WS-NUM-VAL > 99999999
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-NUM-VAL TO WS-DEB
+    MOVE WS-P3 TO WS-TXT
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O" OR WS-NUM-VAL > 99999999
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-NUM-VAL TO WS-FIN-P
+    IF WS-P4(2:) NOT = SPACES
+       OR (WS-P4(1:1) NOT = "T" AND WS-P4(1:1) NOT = "C")
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-P4(1:1) TO WS-FORMAT-REL
+    CALL "SYSTEM" USING "mkdir -p reports"
+    CALL "RELEVE" USING WS-ID-CLIENT WS-SRC WS-DEB WS-FIN-P
+                        WS-FORMAT-REL RELEVE-RES WS-STATUS
+    IF WS-STATUS = "00" OR WS-STATUS = "75"
+        IF WS-FORMAT-REL = "C"
+            MOVE ".csv" TO WS-EXT
+        ELSE
+            MOVE ".txt" TO WS-EXT
+        END-IF
+        MOVE REL-NB-OPS TO WS-ED-N
+        DISPLAY '{"ok":true,"statut":"' WS-STATUS '","fichier":"RELEVE_'
+                WS-SRC '_' WS-DEB '_' WS-FIN-P WS-EXT '","operations":'
+                FUNCTION TRIM(WS-ED-N) '}'
+    ELSE
+        PERFORM REPONDRE-ERREUR
+    END-IF.
+
+*> programmer : WS-P1 source, WS-P2 destination, WS-P3 montant, WS-P4 date,
+*> WS-P5 frequence (U ou M)
+CMD-PROGRAMMER.
+    MOVE WS-P1 TO WS-TXT
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O"
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-NUM-VAL TO WS-SRC
+    MOVE WS-P2 TO WS-TXT
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O"
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-NUM-VAL TO WS-DST
+    MOVE WS-P3 TO WS-TXT
+    PERFORM CONVERTIR-MONTANT
+    IF WS-MONT-OK NOT = "O"
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-P4 TO WS-TXT
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O" OR WS-NUM-VAL > 99999999
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    IF WS-P5(2:) NOT = SPACES
+       OR (WS-P5(1:1) NOT = "U" AND WS-P5(1:1) NOT = "M")
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    INITIALIZE PROG-REC
+    MOVE WS-ID-CLIENT TO PRG-ID-CLIENT
+    MOVE WS-SRC TO PRG-CPT-SRC
+    MOVE WS-DST TO PRG-CPT-DST
+    MOVE WS-MONTANT TO PRG-MONTANT
+    MOVE WS-NUM-VAL TO PRG-DATE-PROCHAINE
+    MOVE WS-P5(1:1) TO PRG-FREQ
+    ACCEPT WS-AUJ FROM DATE YYYYMMDD
+    MOVE "N" TO WS-PACT
+    CALL "PROG" USING WS-PACT PROG-REC WS-AUJ WS-NB-OK WS-NB-KO
+                      WS-STATUS
+    IF WS-STATUS = "00"
+        MOVE PRG-ID TO WS-ED-N
+        DISPLAY '{"ok":true,"id":' FUNCTION TRIM(WS-ED-N) '}'
+    ELSE
+        PERFORM REPONDRE-ERREUR
+    END-IF.
+
+*> programmes / admin-programmes : ceux du client (tous pour l'administrateur)
+CMD-PROGRAMMES.
+    MOVE "Y" TO WS-PREMIER
+    MOVE 0 TO WS-PROG-DERNIER
+    DISPLAY '{"ok":true,"programmes":[' WITH NO ADVANCING
+    MOVE "00" TO WS-STATUS
+    PERFORM UNTIL WS-STATUS NOT = "00"
+        INITIALIZE PROG-REC
+        MOVE WS-PROG-DERNIER TO PRG-ID
+        IF WS-ADMIN = "O"
+            MOVE 0 TO PRG-ID-CLIENT
+        ELSE
+            MOVE WS-ID-CLIENT TO PRG-ID-CLIENT
+        END-IF
+        MOVE "S" TO WS-PACT
+        CALL "PROG" USING WS-PACT PROG-REC WS-AUJ WS-NB-OK WS-NB-KO
+                          WS-STATUS
+        IF WS-STATUS = "00"
+            MOVE PRG-ID TO WS-PROG-DERNIER
+            PERFORM ECRIRE-PROGRAMME
+        END-IF
+    END-PERFORM
+    IF WS-STATUS = "10"
+        DISPLAY ']}'
+    ELSE
+        DISPLAY ']}'
+    END-IF.
+
+ECRIRE-PROGRAMME.
+    IF WS-PREMIER = "N"
+        DISPLAY "," WITH NO ADVANCING
+    END-IF
+    MOVE "N" TO WS-PREMIER
+    MOVE PRG-ID TO WS-ED-N
+    DISPLAY '{"id":' FUNCTION TRIM(WS-ED-N) ',"client":'
+            WITH NO ADVANCING
+    MOVE PRG-ID-CLIENT TO WS-ED-N
+    DISPLAY FUNCTION TRIM(WS-ED-N) ',"src":"' PRG-CPT-SRC '","dst":"'
+            PRG-CPT-DST '","montant":' WITH NO ADVANCING
+    MOVE PRG-MONTANT TO WS-ED-M
+    DISPLAY FUNCTION TRIM(WS-ED-M) ',"date":"' PRG-DATE-PROCHAINE
+            '","freq":"' PRG-FREQ '","statut":"' PRG-STATUT
+            '","executions":' WITH NO ADVANCING
+    MOVE PRG-NB-EXEC TO WS-ED-N
+    DISPLAY FUNCTION TRIM(WS-ED-N) ',"dernier":"'
+            FUNCTION TRIM(PRG-DERNIER) '"}' WITH NO ADVANCING.
+
+*> annuler : WS-P1 = numero du programme
+CMD-ANNULER-PROG.
+    MOVE WS-P1 TO WS-TXT
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O" OR WS-NUM-VAL > 99999999
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    INITIALIZE PROG-REC
+    MOVE WS-NUM-VAL TO PRG-ID
+    MOVE WS-ID-CLIENT TO PRG-ID-CLIENT
+    ACCEPT WS-AUJ FROM DATE YYYYMMDD
+    MOVE "A" TO WS-PACT
+    CALL "PROG" USING WS-PACT PROG-REC WS-AUJ WS-NB-OK WS-NB-KO
+                      WS-STATUS
+    IF WS-STATUS = "00"
+        DISPLAY '{"ok":true,"statut":"00"}'
+    ELSE
+        PERFORM REPONDRE-ERREUR
+    END-IF.
+
+*> admin-echeances : execute les echeances dues aujourd'hui ou avant
+CMD-ADMIN-ECHEANCES.
+    INITIALIZE PROG-REC
+    ACCEPT WS-AUJ FROM DATE YYYYMMDD
+    MOVE "E" TO WS-PACT
+    CALL "PROG" USING WS-PACT PROG-REC WS-AUJ WS-NB-OK WS-NB-KO
+                      WS-STATUS
+    IF WS-STATUS = "00"
+        MOVE WS-NB-OK TO WS-ED-N
+        DISPLAY '{"ok":true,"executes":' FUNCTION TRIM(WS-ED-N)
+                ',"refuses":' WITH NO ADVANCING
+        MOVE WS-NB-KO TO WS-ED-N
+        DISPLAY FUNCTION TRIM(WS-ED-N) '}'
+    ELSE
+        PERFORM REPONDRE-ERREUR
+    END-IF.
 
 *> admin-clients : tous les clients, sans sel ni empreinte
 CMD-ADMIN-CLIENTS.

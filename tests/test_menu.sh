@@ -9,6 +9,7 @@ rm -f $T/MENU_*
 export CLIENTS_FILE=$T/MENU_CLIENTS.dat COMPTES_FILE=$T/MENU_COMPTES.dat
 export TRX_FILE=$T/MENU_TRX.dat ALERTES_FILE=$T/MENU_ALERTES.dat
 export PARAMS_FILE=$T/MENU_AUCUN_PARAMS.cfg
+export PROGRAMMES_FILE=$T/MENU_PROG.dat
 export BATCH_FILE=$T/MENU_BATCH.dat BATCH_REPORT_DIR=$T RELEVE_DIR=$T
 AUJ=$(date +%Y%m%d)
 NB_ECHECS=0
@@ -138,6 +139,36 @@ printf '%s\n' 1 4 2468 8 "" 8 2 8 9 8 "" 8 "" 8 "" 8 "" 1 0 0 | $BIN > $T/MENU_1
 verifie "connexion du nouveau client" $T/MENU_14.out "Bonjour Zoe Martin"
 verifie "ouverture : premier compte courant" $T/MENU_14.out "Compte ouvert : 1000000004"
 verifie "ouverture : compte epargne" $T/MENU_14.out "Type : epargne"
+
+echo "MENU : virements programmes"
+printf '%s\n' 1 2 4321 9 \
+    2 1000000001 1000000003 5 $AUJ 2 \
+    2 1000000001 1000000003 7 $AUJ 1 \
+    2 1000000002 1000000001 5 $AUJ 1 \
+    2 1000000001 1000000003 5 20200101 1 \
+    1 \
+    3 2 \
+    3 2 \
+    3 99 \
+    0 0 0 | $BIN > $T/MENU_15.out 2>&1
+verifie "programme mensuel cree" $T/MENU_15.out "Virement programme : numero 00000001"
+verifie "programme unique cree" $T/MENU_15.out "Virement programme : numero 00000002"
+verifie "programme depuis le compte d'un autre (74)" $T/MENU_15.out "Ce compte n'est pas a vous"
+verifie "date passee refusee (52)" $T/MENU_15.out "Date invalide ou passee"
+verifie "liste : programme mensuel" $T/MENU_15.out "chaque mois, prochain le"
+verifie "annulation" $T/MENU_15.out "Virement programme annule"
+verifie "annulation rejouee (56)" $T/MENU_15.out "n'est plus actif"
+verifie "annulation d'un numero inconnu (54)" $T/MENU_15.out "Virement programme introuvable"
+printf '%s\n' 1 1 1234 9 1 4 0 0 0 | $BIN > $T/MENU_16.out 2>&1
+verifie "admin : liste de tous les programmes" $T/MENU_16.out "annule"
+verifie "admin : echeances executees" $T/MENU_16.out "Virements faits    :       1"
+verifie "admin : aucun refus" $T/MENU_16.out "Virements refuses  :       0"
+printf '%s\n' 1 1 1234 9 4 0 0 0 | $BIN > $T/MENU_17.out 2>&1
+verifie "admin : rejeu sans doublon" $T/MENU_17.out "Virements faits    :       0"
+printf '%s\n' 1 2 4321 9 1 0 0 0 | $BIN > $T/MENU_18.out 2>&1
+verifie "client : prochaine echeance le mois suivant, 1 execution" $T/MENU_18.out "1 execution(s)"
+printf '%s\n' 1 2 4321 9 4 0 0 0 | $BIN > $T/MENU_19.out 2>&1
+verifie "client : pas d'execution des echeances" $T/MENU_19.out "Choix invalide"
 verifie "ouverture : type invalide" $T/MENU_14.out "Type de compte invalide"
 verifie "ouverture : limite de comptes" $T/MENU_14.out "Nombre maximal de comptes atteint"
 verifie "mes comptes : 5 comptes" $T/MENU_14.out "Compte 1000000008  solde"

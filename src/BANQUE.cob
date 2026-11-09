@@ -54,6 +54,11 @@ COPY "CLIENT.cpy".
 COPY "BATCH.cpy".
 COPY "RELEVE.cpy".
 COPY "PARAMS.cpy".
+COPY "PROGRAMME.cpy".
+01 WS-SOUS-FIN      PIC X.
+01 WS-NB-OK         PIC 9(5).
+01 WS-NB-KO         PIC 9(5).
+01 WS-PROG-DERNIER  PIC 9(8).
 01 WS-FS            PIC XX.
 01 WS-CPT-NAME      PIC X(100).
 01 WS-CLI-NAME      PIC X(100).
@@ -288,9 +293,11 @@ MENU-CLIENT.
         DISPLAY "6. Releve de compte"
         DISPLAY "7. Changer mon PIN"
         DISPLAY "8. Ouvrir un compte"
+        DISPLAY "9. Virements programmes"
         DISPLAY "0. Deconnexion"
         PERFORM LIRE-CHOIX
         EVALUATE WS-CHOIX(1:1)
+            WHEN "9" PERFORM MENU-PROGRAMMES
             WHEN "8" PERFORM OUVRIR-MON-COMPTE
             WHEN "1" PERFORM LISTER-MES-COMPTES
             WHEN "2" PERFORM OPERATION-DEPOT
@@ -303,6 +310,183 @@ MENU-CLIENT.
             WHEN OTHER DISPLAY "Choix invalide"
         END-EVALUATE
     END-PERFORM.
+
+*> ---------------------------------------------------------------
+*> Virements programmes (client : les siens ; administrateur : tous)
+*> ---------------------------------------------------------------
+MENU-PROGRAMMES.
+    MOVE "N" TO WS-SOUS-FIN
+    PERFORM UNTIL WS-SOUS-FIN = "O"
+        DISPLAY " "
+        DISPLAY "--- Virements programmes ---"
+        IF WS-USER-ROLE = "A"
+            DISPLAY "1. Tous les virements programmes"
+            DISPLAY "3. Annuler un virement programme"
+            DISPLAY "4. Executer les echeances du jour"
+        ELSE
+            DISPLAY "1. Mes virements programmes"
+            DISPLAY "2. Programmer un virement"
+            DISPLAY "3. Annuler un virement programme"
+        END-IF
+        DISPLAY "0. Retour"
+        PERFORM LIRE-CHOIX
+        EVALUATE TRUE
+            WHEN WS-CHOIX(1:1) = "1"
+                PERFORM LISTER-PROGRAMMES
+            WHEN WS-CHOIX(1:1) = "2" AND WS-USER-ROLE NOT = "A"
+                PERFORM PROGRAMMER-VIREMENT
+            WHEN WS-CHOIX(1:1) = "3"
+                PERFORM ANNULER-PROGRAMME-SAISIE
+            WHEN WS-CHOIX(1:1) = "4" AND WS-USER-ROLE = "A"
+                PERFORM EXECUTER-ECHEANCES-ADMIN
+            WHEN WS-CHOIX(1:1) = "0"
+                MOVE "O" TO WS-SOUS-FIN
+            WHEN OTHER
+                DISPLAY "Choix invalide"
+        END-EVALUATE
+    END-PERFORM.
+
+LISTER-PROGRAMMES.
+    MOVE 0 TO WS-PROG-DERNIER WS-NB
+    MOVE "00" TO WS-STATUS
+    ACCEPT WS-AUJ FROM DATE YYYYMMDD
+    PERFORM UNTIL WS-STATUS NOT = "00"
+        INITIALIZE PROG-REC
+        MOVE WS-PROG-DERNIER TO PRG-ID
+        IF WS-USER-ROLE = "A"
+            MOVE 0 TO PRG-ID-CLIENT
+        ELSE
+            MOVE WS-USER-ID TO PRG-ID-CLIENT
+        END-IF
+        MOVE "S" TO WS-ACTION
+        CALL "PROG" USING WS-ACTION PROG-REC WS-AUJ WS-NB-OK WS-NB-KO
+                          WS-STATUS
+        IF WS-STATUS = "00"
+            MOVE PRG-ID TO WS-PROG-DERNIER
+            ADD 1 TO WS-NB
+            PERFORM AFFICHER-PROGRAMME
+        END-IF
+    END-PERFORM
+    IF WS-STATUS NOT = "10"
+        PERFORM MESSAGE-STATUT
+    ELSE
+        IF WS-NB = 0
+            DISPLAY "Aucun virement programme."
+        END-IF
+    END-IF.
+
+AFFICHER-PROGRAMME.
+    MOVE PRG-MONTANT TO WS-ED
+    MOVE PRG-DATE-PROCHAINE TO WS-DATE-SRC
+    PERFORM FORMATER-DATE
+    DISPLAY "No " PRG-ID " : " PRG-CPT-SRC " -> " PRG-CPT-DST " "
+            WS-ED " EUR, " WITH NO ADVANCING
+    IF PRG-MENSUEL
+        DISPLAY "chaque mois, " WITH NO ADVANCING
+    ELSE
+        DISPLAY "une fois, " WITH NO ADVANCING
+    END-IF
+    EVALUATE PRG-STATUT
+        WHEN "A" DISPLAY "prochain le " WS-DATE-ED WITH NO ADVANCING
+        WHEN "T" DISPLAY "termine" WITH NO ADVANCING
+        WHEN "X" DISPLAY "annule" WITH NO ADVANCING
+        WHEN OTHER DISPLAY "arrete (refus " PRG-DERNIER ")"
+                           WITH NO ADVANCING
+    END-EVALUATE
+    MOVE PRG-NB-EXEC TO WS-ED-NB
+    DISPLAY ", " FUNCTION TRIM(WS-ED-NB) " execution(s)"
+    IF PRG-ACTIF AND PRG-DERNIER NOT = SPACES AND PRG-DERNIER NOT = "00"
+        DISPLAY "     dernier essai refuse (code " PRG-DERNIER
+                "), nouvel essai a la prochaine execution"
+    END-IF.
+
+PROGRAMMER-VIREMENT.
+    PERFORM SAISIR-COMPTE-PROPRE
+    IF WS-STATUS NOT = "00"
+        EXIT PARAGRAPH
+    END-IF
+    INITIALIZE PROG-REC
+    MOVE WS-USER-ID TO PRG-ID-CLIENT
+    MOVE CPT-NUM TO PRG-CPT-SRC
+    DISPLAY "Compte destinataire : " WITH NO ADVANCING
+    ACCEPT WS-IN
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O"
+        DISPLAY "Numero de compte invalide"
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-NUM-VAL TO PRG-CPT-DST
+    PERFORM SAISIR-MONTANT
+    IF WS-MONT-OK NOT = "O"
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-MONTANT TO PRG-MONTANT
+    DISPLAY "Date de la premiere echeance (AAAAMMJJ) : " WITH NO ADVANCING
+    ACCEPT WS-IN
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O" OR WS-NUM-VAL > 99999999
+        DISPLAY "Date invalide"
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-NUM-VAL TO PRG-DATE-PROCHAINE
+    DISPLAY "Frequence (1 une fois, 2 chaque mois) [1] : "
+            WITH NO ADVANCING
+    MOVE SPACES TO WS-IN
+    ACCEPT WS-IN
+    IF WS-IN(1:1) = "2"
+        MOVE "M" TO PRG-FREQ
+    ELSE
+        MOVE "U" TO PRG-FREQ
+    END-IF
+    ACCEPT WS-AUJ FROM DATE YYYYMMDD
+    MOVE "N" TO WS-ACTION
+    CALL "PROG" USING WS-ACTION PROG-REC WS-AUJ WS-NB-OK WS-NB-KO
+                      WS-STATUS
+    IF WS-STATUS = "00"
+        DISPLAY "Virement programme : numero " PRG-ID
+    ELSE
+        PERFORM MESSAGE-STATUT
+    END-IF.
+
+ANNULER-PROGRAMME-SAISIE.
+    DISPLAY "Numero du virement programme : " WITH NO ADVANCING
+    ACCEPT WS-IN
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O" OR WS-NUM-VAL > 99999999
+        DISPLAY "Numero invalide"
+        EXIT PARAGRAPH
+    END-IF
+    INITIALIZE PROG-REC
+    MOVE WS-NUM-VAL TO PRG-ID
+    IF WS-USER-ROLE = "A"
+        MOVE 0 TO PRG-ID-CLIENT
+    ELSE
+        MOVE WS-USER-ID TO PRG-ID-CLIENT
+    END-IF
+    MOVE "A" TO WS-ACTION
+    ACCEPT WS-AUJ FROM DATE YYYYMMDD
+    CALL "PROG" USING WS-ACTION PROG-REC WS-AUJ WS-NB-OK WS-NB-KO
+                      WS-STATUS
+    IF WS-STATUS = "00"
+        DISPLAY "Virement programme annule."
+    ELSE
+        PERFORM MESSAGE-STATUT
+    END-IF.
+
+EXECUTER-ECHEANCES-ADMIN.
+    INITIALIZE PROG-REC
+    ACCEPT WS-AUJ FROM DATE YYYYMMDD
+    MOVE "E" TO WS-ACTION
+    CALL "PROG" USING WS-ACTION PROG-REC WS-AUJ WS-NB-OK WS-NB-KO
+                      WS-STATUS
+    IF WS-STATUS = "00"
+        MOVE WS-NB-OK TO WS-ED-NB
+        DISPLAY "Virements faits    : " WS-ED-NB
+        MOVE WS-NB-KO TO WS-ED-NB
+        DISPLAY "Virements refuses  : " WS-ED-NB
+    ELSE
+        PERFORM MESSAGE-STATUT
+    END-IF.
 
 *> Inscription libre depuis le menu de depart : role client uniquement
 INSCRIPTION.
@@ -596,9 +780,11 @@ MENU-ADMIN.
         DISPLAY "6. Releve d'un compte"
         DISPLAY "7. Changer mon PIN"
         DISPLAY "8. Modifier un compte"
+        DISPLAY "9. Virements programmes"
         DISPLAY "0. Deconnexion"
         PERFORM LIRE-CHOIX
         EVALUATE WS-CHOIX(1:1)
+            WHEN "9" PERFORM MENU-PROGRAMMES
             WHEN "8" PERFORM ADMIN-MODIFIER-COMPTE
             WHEN "1" PERFORM ADMIN-CREER-CLIENT
             WHEN "2" PERFORM ADMIN-OUVRIR-COMPTE
@@ -1130,6 +1316,12 @@ MESSAGE-STATUT.
         WHEN "00" DISPLAY "Operation effectuee."
         WHEN "22" DISPLAY "Existe deja."
         WHEN "23" DISPLAY "Introuvable."
+        WHEN "51" DISPLAY "Nombre maximal de virements programmes atteint."
+        WHEN "52" DISPLAY "Date invalide ou passee."
+        WHEN "53" DISPLAY "Frequence invalide."
+        WHEN "54" DISPLAY "Virement programme introuvable."
+        WHEN "55" DISPLAY "Ce virement programme n'est pas a vous."
+        WHEN "56" DISPLAY "Ce virement programme n'est plus actif."
         WHEN "61" DISPLAY "Parametre invalide ou hors limites."
         WHEN "62" DISPLAY "Parametre inconnu dans le fichier."
         WHEN "63" DISPLAY "Ligne de parametres mal formee."

@@ -41,6 +41,7 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - Jeu de données de test et tests de bout en bout.
 - *(V1.1)* Export CSV des relevés, connexion par identifiant ou par nom, jeu de démonstration (`make demo`).
 - *(V1.1)* Interface web locale côté client (consultation, dépôt, retrait, virement, historique) appelant les programmes COBOL.
+- *(V1.1)* Téléchargement des relevés (texte ou CSV) depuis l'interface web, avec les mêmes contrôles qu'en console.
 - *(V1.1)* Espace administrateur web : clients (blocage / déblocage), comptes (plafond, découvert, statut), alertes, traitement mensuel.
 - *(V1.1)* Inscription libre et ouverture de comptes en libre-service (console et web).
 - *(V1.1)* Découvert autorisé par compte courant et comptes épargne (taux propre, retrait en espèces interdit).
@@ -102,6 +103,15 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - **F-BAT-4** : chaque écriture est enregistrée dans l'historique avec un type dédié (intérêt, frais, agios).
 - **F-BAT-5** : il produit un rapport de fin de traitement (nombre de comptes traités, total des intérêts, total des frais, total des agios, anomalies).
 - **F-BAT-6** : le batch est rejouable sans doublon : un second lancement sur la même période est refusé.
+
+### 4.4 bis Virements programmés (V1.2)
+
+- **F-PRG-1** : un client programme un virement depuis l'un de ses comptes vers un compte actif, avec un montant, une date d'échéance (aujourd'hui ou plus tard) et une fréquence : unique ou mensuelle.
+- **F-PRG-2** : le nombre de programmes actifs par client est limité (`MAX_PROGRAMMES_CLIENT`) ; un compte épargne ne peut programmer que vers un compte courant du même client.
+- **F-PRG-3** : un client liste ses programmes et annule les siens ; l'administrateur les liste tous et peut en annuler.
+- **F-PRG-4** : l'administrateur exécute à la demande les échéances arrivées ; chaque exécution passe par le virement normal (plafond, fraude, découvert, historique).
+- **F-PRG-5** : un programme unique devient terminé après succès ; un programme mensuel avance d'un mois en gardant son jour (borné à la fin du mois) et rattrape au plus 12 échéances par exécution.
+- **F-PRG-6** : un refus pour solde ou plafond est réessayé à l'exécution suivante ; tout autre refus met le programme en erreur ; un second lancement le même jour ne crée pas de doublon.
 
 ### 4.5 Détection de fraude basique
 
@@ -224,6 +234,7 @@ Les valeurs ci-dessous sont des **valeurs par défaut proposées**, toutes modif
 | Taux d'intérêt annuel | 1,50 % (appliqué au douzième chaque mois) |
 | Frais de tenue de compte mensuels | 2,00 |
 | Taux annuel des agios sur solde négatif | 12,00 % |
+| Virements programmés actifs par client | 10 |
 | Seuil d'alerte « montant anormal » | 5 fois la moyenne des opérations du compte |
 | Montant minimal d'une opération | 0,01 |
 
@@ -285,7 +296,7 @@ intérêt = solde × taux annuel ÷ 12      (arrondi au centime, solde > 0 uniqu
 ## 10. Évolutions possibles (hors V1)
 
 - HTTPS et sessions, API REST documentée.
-- Virements programmés.
+- Virements programmés avec fréquences supplémentaires et exécution automatique (démon ou tâche planifiée).
 - Règles de fraude plus riches (géolocalisation simulée, fréquence, horaires).
 - Migration du stockage vers une base SQL.
 - Agios au jour le jour, par tranche de découvert ; comptes épargne plafonnés.

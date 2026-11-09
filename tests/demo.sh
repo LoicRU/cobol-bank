@@ -11,6 +11,7 @@ D=${DEMO_DIR:-demo}
 export CLIENTS_FILE=$D/CLIENTS.dat COMPTES_FILE=$D/COMPTES.dat
 export TRX_FILE=$D/TRANSACTIONS.dat ALERTES_FILE=$D/ALERTES.dat
 export BATCH_FILE=$D/BATCH.dat BATCH_REPORT_DIR=$D/reports RELEVE_DIR=$D/reports
+export PROGRAMMES_FILE=$D/PROGRAMMES.dat
 
 if [ "$1" = "run" ]; then
     [ -f "$CLIENTS_FILE" ] || { echo "Pas de donnees : lancer d'abord make demo"; exit 1; }
@@ -71,6 +72,18 @@ printf '%s\n' 1 Clara 0000 1 Clara 0000 1 Clara 0000 0 | $BIN > /dev/null 2>&1
 # 5. traitement mensuel (mois en cours)
 printf '%s\n' 1 1 1234 5 "" 0 0 | $BIN > /dev/null 2>&1
 
+# 6. virements programmes d'Alice (bin/api) : un loyer mensuel pour Bob des le
+#    1er du mois prochain, et un virement unique du jour vers son epargne
+#    (execute par l'admin : menu 9 puis 4, ou bouton sur le web)
+if [ -x bin/api ]; then
+    PROCHAIN=$(date -d "$(date +%Y-%m-01) +1 month" +%Y%m%d 2>/dev/null)
+    # bin/api traite une seule ligne par appel
+    [ -n "$PROCHAIN" ] && {
+        echo "programmer 2 4321 1000000001 1000000003 30 $PROCHAIN M" | bin/api > /dev/null 2>&1
+        echo "programmer 2 4321 1000000002 1000000005 20 $AUJ U" | bin/api > /dev/null 2>&1
+    }
+fi
+
 cat <<FIN
 Demo creee dans $D/
 
@@ -86,6 +99,9 @@ Demo creee dans $D/
 Dans le menu admin : option 4 pour les alertes (plafond depasse, echecs de
 PIN rapproches, blocage), option 6 pour un releve, option 8 pour modifier
 un compte (plafond, decouvert, statut).
+Virements programmes d'Alice : 30.00 chaque mois vers Bob (1er du mois
+prochain) et 20.00 une fois vers son epargne, du jour : a executer par l'admin
+(menu 9 puis option 4, ou le bouton « Executer les echeances » sur le web).
 Releves d'Alice (texte et CSV) deja generes dans $D/reports/
 
 Lancer le programme sur ces donnees : make run-demo

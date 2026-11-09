@@ -43,6 +43,10 @@ verifie "alerte plafond journalier" $T/DEMO_admin.txt "PLAFOND_JOUR"
 verifie "alerte echecs rapproches" $T/DEMO_admin.txt "ECHECS_RAPIDES"
 verifie "alerte blocage" $T/DEMO_admin.txt "PIN_BLOQUE"
 
+printf '%s\n' 1 Alice 4321 9 1 0 0 0 | sh $T/demo.sh run > $T/DEMO_prog.txt 2>&1
+verifie "programmes d'Alice : mensuel vers Bob" $T/DEMO_prog.txt "chaque mois"
+verifie "programmes d'Alice : unique vers l'epargne" $T/DEMO_prog.txt "une fois"
+
 echo "DEMO : rejeu"
 sh $T/demo.sh > /dev/null 2>&1
 printf '%s\n' 1 Alice 4321 1 0 0 | sh $T/demo.sh run > $T/DEMO_alice2.txt 2>&1

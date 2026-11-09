@@ -31,6 +31,10 @@ COMMANDES = {
     "virement": ["source", "destination", "montant"],
     "historique": ["compte"],
     "ouvrir": ["type"],
+    "releve": ["compte", "debut", "fin", "format"],
+    "programmer": ["source", "destination", "montant", "date", "freq"],
+    "programmes": [],
+    "annuler": ["programme"],
     "inscription": ["nom"],   # sans authentification : pas d'identifiant
     # commandes administrateur (role verifie par le COBOL)
     "admin-connexion": [],
@@ -41,6 +45,8 @@ COMMANDES = {
     "admin-debloquer": ["client"],
     "admin-modifier": ["compte", "plafond", "decouvert", "statut"],
     "admin-batch": ["periode"],
+    "admin-programmes": [],
+    "admin-echeances": [],
 }
 OPTIONNELS = {"periode"}   # parametre qui peut etre omis
 RE_ID = re.compile(r"^[0-9]{1,6}$")
@@ -54,9 +60,15 @@ RE_MONTANT = re.compile(r"^[0-9]{1,9}([.,][0-9]{1,2})?$")
 RE_MONTANT7 = re.compile(r"^[0-9]{1,7}([.,][0-9]{1,2})?$")   # plafond, decouvert
 RE_STATUT = re.compile(r"[AGC]")
 RE_PERIODE = re.compile(r"^[0-9]{6}$")
+RE_DATE = re.compile(r"^[0-9]{8}$")
+RE_FORMAT = re.compile(r"[TC]")
+RE_FREQ = re.compile(r"[UM]")
+RE_PROGRAMME = re.compile(r"^[0-9]{1,8}$")
+RE_FICHIER = re.compile(r"RELEVE_[0-9]{10}_[0-9]{8}_[0-9]{8}\.(txt|csv)")
 MOTIFS = {"montant": RE_MONTANT, "plafond": RE_MONTANT7, "decouvert": RE_MONTANT7,
           "statut": RE_STATUT, "periode": RE_PERIODE, "type": RE_TYPE,
-          "client": RE_ID}
+          "client": RE_ID, "debut": RE_DATE, "fin": RE_DATE, "format": RE_FORMAT,
+          "date": RE_DATE, "freq": RE_FREQ, "programme": RE_PROGRAMME}
 
 
 def valider(commande, corps):
@@ -103,6 +115,21 @@ def appeler_cobol(ligne):
         return {"ok": False, "statut": "99"}
 
 
+def joindre_releve(reponse):
+    """Ajoute le contenu du fichier de releve ecrit par le COBOL (nom controle)."""
+    nom = str(reponse.get("fichier", ""))
+    if not RE_FICHIER.fullmatch(nom):
+        return {"ok": False, "statut": "99"}
+    dossier = os.environ.get("RELEVE_DIR", "reports")
+    chemin = os.path.join(RACINE, dossier, nom)
+    try:
+        with open(chemin, "rb") as f:
+            reponse["contenu"] = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return {"ok": False, "statut": "99"}
+    return reponse
+
+
 MODE_DEMO = False
 
 
@@ -144,7 +171,10 @@ class Gestionnaire(BaseHTTPRequestHandler):
         ligne = valider(commande, corps)
         if ligne is None:
             return self._json(400, {"ok": False, "statut": "79"})
-        self._json(200, appeler_cobol(ligne))
+        reponse = appeler_cobol(ligne)
+        if commande == "releve" and reponse.get("ok"):
+            reponse = joindre_releve(reponse)
+        self._json(200, reponse)
 
     def log_message(self, fmt, *args):  # pas de PIN ni de corps dans les logs
         sys.stderr.write("%s %s\n" % (self.command, self.path))

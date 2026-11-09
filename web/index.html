@@ -23,6 +23,7 @@ body { margin: 0; background: var(--fond); color: var(--texte);
 main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
 h1 { font-size: 1.3rem; margin: 0; }
 h2 { font-size: 1.05rem; margin: 0 0 12px; }
+h3 { font-size: .95rem; margin: 20px 0 0; }
 header { display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 20px; gap: 12px; }
 .carte { background: var(--carte); border: 1px solid var(--trait);
@@ -168,6 +169,16 @@ table.g th:last-child, table.g td:last-child { text-align: right; }
     </section>
 
     <section class="carte">
+      <h2>Virements programmés</h2>
+      <div class="defile" id="a-prog"></div>
+      <p class="vide">Un virement est exécuté avec les mêmes contrôles qu'un virement normal. Refus pour solde ou plafond : nouvel essai à l'exécution suivante.</p>
+      <p>
+        <button type="button" id="e-lancer">Exécuter les échéances du jour</button>
+        <button type="button" class="secondaire" id="e-annuler" hidden>Annuler</button>
+      </p>
+    </section>
+
+    <section class="carte">
       <h2>Alertes <span class="type" id="al-total"></span></h2>
       <div class="defile" id="a-alertes"></div>
     </section>
@@ -212,6 +223,41 @@ table.g th:last-child, table.g td:last-child { text-align: right; }
     </section>
 
     <section class="carte">
+      <h2>Virements programmés</h2>
+      <div class="defile" id="p-liste"></div>
+      <h3>Programmer un virement</h3>
+      <form id="form-prog" autocomplete="off">
+        <label for="p-source">Compte à débiter</label>
+        <select id="p-source"></select>
+        <label for="p-dst">Compte destinataire (10 chiffres)</label>
+        <input id="p-dst" inputmode="numeric" pattern="[0-9]{1,10}" required>
+        <div class="ligne">
+          <div><label for="p-montant">Montant</label>
+            <input id="p-montant" inputmode="decimal" placeholder="0.00" pattern="[0-9]{1,9}([.,][0-9]{1,2})?" required></div>
+          <div><label for="p-date">Première échéance</label><input id="p-date" type="date" required></div>
+          <div><label for="p-freq">Fréquence</label>
+            <select id="p-freq"><option value="U">Une fois</option><option value="M">Chaque mois</option></select></div>
+        </div>
+        <p><button type="submit" id="p-valider">Programmer</button></p>
+      </form>
+    </section>
+
+    <section class="carte">
+      <h2>Relevé de compte</h2>
+      <form id="form-releve">
+        <label for="r-compte">Compte</label>
+        <select id="r-compte"></select>
+        <div class="ligne">
+          <div><label for="r-debut">Du</label><input id="r-debut" type="date" required></div>
+          <div><label for="r-fin">Au</label><input id="r-fin" type="date" required></div>
+          <div><label for="r-format">Format</label>
+            <select id="r-format"><option value="T">Texte (.txt)</option><option value="C">CSV (.csv)</option></select></div>
+        </div>
+        <p><button type="submit" id="r-valider">Télécharger</button></p>
+      </form>
+    </section>
+
+    <section class="carte">
       <h2>Historique <span class="type" id="h-compte"></span></h2>
       <div class="defile" id="historique"></div>
     </section>
@@ -222,6 +268,12 @@ table.g th:last-child, table.g td:last-child { text-align: right; }
 "use strict";
 const MESSAGES = {
   "22": "Existe déjà.", "23": "Introuvable.",
+  "51": "Nombre maximal de virements programmés atteint.",
+  "52": "Date invalide ou passée.",
+  "53": "Fréquence invalide.",
+  "54": "Virement programmé introuvable.",
+  "55": "Ce virement programmé n'est pas à vous.",
+  "56": "Ce virement programmé n'est plus actif.",
   "61": "Configuration invalide : voir l'administrateur.",
   "62": "Configuration invalide : voir l'administrateur.",
   "63": "Configuration invalide : voir l'administrateur.",
@@ -229,8 +281,10 @@ const MESSAGES = {
   "77": "Commande inconnue.",
   "71": "Cette période a déjà été traitée.",
   "72": "Période interrompue lors d'un lancement précédent : vérification manuelle nécessaire.",
-  "73": "Période invalide.",
   "78": "Action non autorisée pour ce rôle.",
+  "73": "Période ou dates invalides.",
+  "75": "Relevé téléchargé, mais incohérent : à signaler à l'administrateur.",
+  "76": "Format inconnu.",
   "79": "Saisie invalide.",
   "81": "Identifiant ou PIN incorrect.",
   "82": "Client bloqué : voir un administrateur.",
@@ -279,6 +333,10 @@ function dessinerComptes() {
   zone.replaceChildren();
   const sel = $("o-compte");
   sel.replaceChildren();
+  const selR = $("r-compte");
+  selR.replaceChildren();
+  const selP = $("p-source");
+  selP.replaceChildren();
   if (comptes.length === 0) {
     const p = document.createElement("p");
     p.className = "vide"; p.textContent = "Aucun compte.";
@@ -311,6 +369,8 @@ function dessinerComptes() {
     opt.value = c.num; opt.textContent = c.num + " (" + (c.type === "E" ? "épargne" : "courant") + ")";
     if (c.num === compteCourant) opt.selected = true;
     sel.append(opt);
+    selR.append(opt.cloneNode(true));
+    selP.append(opt.cloneNode(true));
   }
 }
 
@@ -438,6 +498,7 @@ async function chargerAdmin() {
         euro(k.plafond), euro(k.decouvert), STATUT_COMPTE[k.statut] || k.statut,
         bouton("Modifier", () => ouvrirModif(k))];
     }), "Aucun compte.");
+  await chargerProgrammes();
   const ra = await appel("admin-alertes", {});
   if (!ra.ok) { erreur(ra.statut); return; }
   $("al-total").textContent = ra.total > ra.alertes.length
@@ -528,6 +589,8 @@ $("form-connexion").addEventListener("submit", async (e) => {
   $("bonjour").textContent = (session.admin ? "Administrateur " : "Bonjour ") + r.nom + " ";
   afficher(true);
   if (session.admin) { chargerAdmin(); return; }
+  initDatesReleve();
+  chargerProgrammes();
   choisirOperation("depot");
   if (await chargerComptes()) chargerHistorique();
 });
@@ -575,6 +638,108 @@ $("form-inscription").addEventListener("submit", async (e) => {
   message("Compte client créé : votre identifiant est " + r.id + ". Connectez-vous avec votre PIN, puis ouvrez un compte.", true);
 });
 
+function dateISO(d) { return d.toLocaleDateString("sv-SE"); }  // AAAA-MM-JJ, heure locale
+const FREQ = { U: "une fois", M: "chaque mois" };
+const ST_PROG = { A: "actif", T: "terminé", X: "annulé", E: "arrêté" };
+const date8 = (d) => d.slice(6) + "/" + d.slice(4, 6) + "/" + d.slice(0, 4);
+
+// liste des virements programmés : ceux du client, ou tous (administrateur)
+async function chargerProgrammes() {
+  const admin = session && session.admin;
+  const r = await appel(admin ? "admin-programmes" : "programmes", {});
+  if (!r.ok) { erreur(r.statut); return; }
+  const lignes = r.programmes.slice().reverse().map((p) => {
+    const etat = document.createElement("div");
+    etat.textContent = ST_PROG[p.statut] + (p.statut === "A" ? " · prochain " + date8(p.date) : "");
+    if (p.statut === "E") etat.title = MESSAGES[p.dernier] || "";
+    if (p.dernier && p.dernier !== "00" && p.statut !== "T") {
+      const s = document.createElement("small");
+      s.className = "type";
+      s.textContent = "dernier essai refusé : " + (MESSAGES[p.dernier] || p.dernier);
+      etat.append(s);
+    }
+    const colonnes = [String(p.id)];
+    if (admin) colonnes.push(String(p.client));
+    colonnes.push(p.src + " → " + p.dst, euro(p.montant) + " €", FREQ[p.freq], etat);
+    colonnes.push(!admin && p.statut === "A" ? bouton("Annuler", () => annulerProgramme(p.id)) : "");
+    return colonnes;
+  });
+  tableau($(admin ? "a-prog" : "p-liste"),
+    admin ? ["N°", "Client", "Virement", "Montant", "Fréquence", "État", ""]
+          : ["N°", "Virement", "Montant", "Fréquence", "État", ""],
+    lignes, "Aucun virement programmé.");
+}
+async function annulerProgramme(id) {
+  message("");
+  const r = await appel("annuler", { programme: String(id) });
+  if (!r.ok) { erreur(r.statut); return; }
+  message("Virement programmé " + id + " annulé.", true);
+  chargerProgrammes();
+}
+$("form-prog").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message("");
+  const b = $("p-valider");
+  b.disabled = true;
+  const r = await appel("programmer", {
+    source: $("p-source").value, destination: $("p-dst").value.trim(),
+    montant: $("p-montant").value.trim(), date: $("p-date").value.replaceAll("-", ""),
+    freq: $("p-freq").value
+  });
+  b.disabled = false;
+  if (!r.ok) { erreur(r.statut); return; }
+  message("Virement programmé : numéro " + r.id + ".", true);
+  $("p-dst").value = ""; $("p-montant").value = "";
+  chargerProgrammes();
+});
+// exécution des échéances (administrateur) : seconde validation, pas de boîte de dialogue
+let echeancesArmees = false;
+function armerEcheances(arme) {
+  echeancesArmees = arme;
+  $("e-lancer").textContent = arme ? "Confirmer l'exécution" : "Exécuter les échéances du jour";
+  $("e-annuler").hidden = !arme;
+}
+$("e-annuler").addEventListener("click", () => armerEcheances(false));
+$("e-lancer").addEventListener("click", async () => {
+  message("");
+  if (!echeancesArmees) { armerEcheances(true); return; }
+  armerEcheances(false);
+  $("e-lancer").disabled = true;
+  const r = await appel("admin-echeances", {});
+  $("e-lancer").disabled = false;
+  if (!r.ok) { erreur(r.statut); return; }
+  message("Échéances exécutées : " + r.executes + " virement(s) fait(s), " + r.refuses + " refusé(s).", r.refuses === 0);
+  chargerAdmin();
+});
+
+function initDatesReleve() {
+  const auj = new Date();
+  $("p-date").value = dateISO(new Date(auj.getFullYear(), auj.getMonth(), auj.getDate() + 1));
+  $("r-fin").value = dateISO(auj);
+  $("r-debut").value = dateISO(new Date(auj.getFullYear(), auj.getMonth(), 1));
+}
+$("form-releve").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message("");
+  const b = $("r-valider");
+  b.disabled = true;
+  const r = await appel("releve", {
+    compte: $("r-compte").value,
+    debut: $("r-debut").value.replaceAll("-", ""),
+    fin: $("r-fin").value.replaceAll("-", ""),
+    format: $("r-format").value
+  });
+  b.disabled = false;
+  if (!r.ok) { erreur(r.statut); return; }
+  const type = r.fichier.endsWith(".csv") ? "text/csv" : "text/plain";
+  const url = URL.createObjectURL(new Blob([r.contenu], { type: type + ";charset=utf-8" }));
+  const lien = document.createElement("a");
+  lien.href = url; lien.download = r.fichier;
+  document.body.append(lien); lien.click(); lien.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  message(r.statut === "75" ? MESSAGES["75"] : "Relevé téléchargé : " + r.fichier + " (" + r.operations + " opération(s)).", r.statut !== "75");
+});
+
 $("form-ouvrir").addEventListener("submit", async (e) => {
   e.preventDefault();
   message("");
@@ -591,7 +756,7 @@ $("form-ouvrir").addEventListener("submit", async (e) => {
 
 $("quitter").addEventListener("click", () => {
   session = null; comptes = []; compteCourant = null; adminComptes = [];
-  $("a-modif").hidden = true; $("b-resultat").replaceChildren(); armerBatch(false);
+  $("a-modif").hidden = true; $("b-resultat").replaceChildren(); armerBatch(false); armerEcheances(false);
   afficher(false); message("Déconnecté.", true);
 });
 
