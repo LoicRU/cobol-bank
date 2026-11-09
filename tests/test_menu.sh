@@ -35,8 +35,8 @@ printf '%s\n' Admin 1234 \
     1 1 1234 \
     1 Alice C 4321 \
     1 Bob C 5555 \
-    2 2 0 \
-    2 3 0 \
+    2 2 "" 0 0 \
+    2 3 "" 0 0 \
     1 \
     0 0 | $BIN > $T/MENU_1.out 2>&1
 verifie "administrateur cree" $T/MENU_1.out "Administrateur cree : identifiant 1"
@@ -62,17 +62,17 @@ printf '%s\n' \
     6 1000000002 $AUJ $AUJ \
     0 0 | $BIN > $T/MENU_2.out 2>&1
 verifie "connexion Alice" $T/MENU_2.out "Bonjour Alice"
-verifie "depot : nouveau solde 500" $T/MENU_2.out "Nouveau solde :       500.00"
-verifie "retrait 100 : solde 400" $T/MENU_2.out "Nouveau solde :       400.00"
-verifie "virement 50,5 : solde 349.50" $T/MENU_2.out "Nouveau solde :       349.50"
+verifie "depot : nouveau solde 500" $T/MENU_2.out "Nouveau solde :        500.00"
+verifie "retrait 100 : solde 400" $T/MENU_2.out "Nouveau solde :        400.00"
+verifie "virement 50,5 : solde 349.50" $T/MENU_2.out "Nouveau solde :        349.50"
 verifie "compte d'un autre refuse (74)" $T/MENU_2.out "Ce compte n'est pas a vous"
 verifie "solde insuffisant (93)" $T/MENU_2.out "Solde insuffisant"
 verifie "montant texte refuse" $T/MENU_2.out "Montant invalide"
-verifie "mes comptes : 349.50" $T/MENU_2.out "Compte 1000000001  solde       349.50"
+verifie "mes comptes : 349.50" $T/MENU_2.out "Compte 1000000001  solde        349.50"
 verifie "historique : operation refusee avec motif" $T/MENU_2.out "99999.00 R SOLDE INSUFFISANT"
 verifie "releve : 3 operations" $T/MENU_2.out "Operations :       3"
 verifie "releve : total debits 150.50" $T/MENU_2.out "Total debits  :         150.50"
-verifie "releve : solde final 349.50" $T/MENU_2.out "Solde final   :       349.50"
+verifie "releve : solde final 349.50" $T/MENU_2.out "Solde final   :        349.50"
 verifie "releve d'un compte tiers refuse" $T/MENU_2.out "Ce compte n'est pas a vous"
 verifie "fichier releve ecrit" $T/RELEVE_1000000001_${AUJ}_${AUJ}.txt "Verification : OK"
 verifie "format choisi : texte par defaut" $T/MENU_2.out "_${AUJ}_${AUJ}.txt"
@@ -100,7 +100,34 @@ verifie "batch execute" $T/MENU_5.out "Traitement termine."
 verifie "batch rejoue refuse" $T/MENU_5.out "Periode deja traitee"
 verifie "batch periode invalide" $T/MENU_5.out "Periode invalide"
 printf '%s\n' 1 2 4321 1 0 0 | $BIN > $T/MENU_6.out 2>&1
-verifie "solde apres interets et frais (347.94)" $T/MENU_6.out "solde       347.94"
+verifie "solde apres interets et frais (347.94)" $T/MENU_6.out "solde        347.94"
+
+echo "MENU : epargne, decouvert et modification de compte"
+printf '%s\n' 1 1 1234 \
+    2 2 2 0 \
+    8 1000000002 "" 100 "" \
+    8 1000000003 "" "" \
+    8 1000000002 abc \
+    8 1000000002 "" "" X \
+    0 0 | $BIN > $T/MENU_10.out 2>&1
+verifie "compte epargne ouvert" $T/MENU_10.out "Type : epargne"
+verifie "compte epargne : numero" $T/MENU_10.out "Compte ouvert : 1000000003"
+verifie "decouvert accorde a Bob" $T/MENU_10.out "Compte modifie"
+verifie "modification refusee : montant invalide" $T/MENU_10.out "Aucune modification"
+verifie "modification refusee : statut invalide" $T/MENU_10.out "Statut invalide"
+printf '%s\n' 1 3 5555 3 1000000002 100 3 1000000002 60 1 6 1000000002 $AUJ $AUJ "" 0 0 \
+    | $BIN > $T/MENU_11.out 2>&1
+verifie "retrait dans le decouvert : solde negatif" $T/MENU_11.out "Nouveau solde :        -51.44"
+verifie "retrait au-dela du decouvert refuse" $T/MENU_11.out "Solde insuffisant"
+verifie "mes comptes : decouvert affiche" $T/MENU_11.out "decouvert autorise       100.00"
+verifie "releve : solde final negatif" $T/MENU_11.out "Solde final   : *-51.44"
+printf '%s\n' 1 2 4321 2 1000000003 200 3 1000000003 10 4 1000000003 1000000002 10 \
+    4 1000000003 1000000001 50 1 0 0 | $BIN > $T/MENU_12.out 2>&1
+verifie "epargne : depot" $T/MENU_12.out "Nouveau solde :        200.00"
+verifie "epargne : retrait interdit (90)" $T/MENU_12.out "interdite sur un compte epargne"
+verifie "epargne : virement vers un tiers interdit" $T/MENU_12.out "interdite sur un compte epargne"
+verifie "epargne : virement vers son courant" $T/MENU_12.out "Nouveau solde :        150.00"
+verifie "mes comptes : epargne affiche" $T/MENU_12.out "epargne"
 
 echo "MENU : fin de saisie sans plantage"
 printf '' | timeout 20 $BIN > $T/MENU_7.out 2>&1

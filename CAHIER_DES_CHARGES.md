@@ -2,9 +2,9 @@
 
 Mini système de core banking écrit en COBOL (GnuCOBOL), avec fichiers indexés et interface console.
 
-- **Auteur** : LoicRU
+- **Auteur** : Loïc Ruyssen
 - **Date** : 2026-11-09
-- **Version du document** : 1.0 (V1 du projet)
+- **Version du document** : 1.1 (V1 du projet, complétée : export CSV, connexion par nom, jeu de démonstration, découvert autorisé et comptes épargne)
 
 ---
 
@@ -39,6 +39,8 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - Détection de fraude basique (plafonds, montant anormal, journal d'alertes).
 - Relevé de compte imprimable (fichier texte formaté).
 - Jeu de données de test et tests de bout en bout.
+- *(V1.1)* Export CSV des relevés, connexion par identifiant ou par nom, jeu de démonstration (`make demo`).
+- *(V1.1)* Découvert autorisé par compte courant et comptes épargne (taux propre, retrait en espèces interdit).
 
 ### Exclu de la V1
 
@@ -46,7 +48,7 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - Virements vers des banques externes (SEPA, SWIFT).
 - Multi-devises.
 - Accès concurrent de plusieurs utilisateurs simultanés.
-- Cartes bancaires, prêts, comptes épargne réglementés.
+- Cartes bancaires, prêts, comptes épargne réglementés (plafonds légaux, livrets défiscalisés), agios sur découvert.
 
 ---
 
@@ -72,22 +74,25 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 
 - **F-CPT-1** : l'administrateur crée un client (identifiant, nom, PIN initial).
 - **F-CPT-2** : un client possède un ou plusieurs comptes, chacun identifié par un numéro unique.
-- **F-CPT-3** : un compte porte un solde, un plafond journalier et un statut (actif, gelé, clos).
+- **F-CPT-3** : un compte porte un type, un solde, un plafond journalier et un statut (actif, gelé, clos).
 - **F-CPT-4** : le client consulte le solde de ses comptes.
+- **F-CPT-5** *(V1.1)* : un compte est **courant** ou **épargne**. Un compte courant porte un découvert autorisé (0 par défaut) ; un compte épargne n'a jamais de découvert.
+- **F-CPT-6** *(V1.1)* : l'administrateur modifie le plafond journalier, le découvert (courant seulement) et le statut d'un compte.
 
 ### 4.3 Opérations
 
 - **F-OP-1 Dépôt** : crédite un compte d'un montant strictement positif.
-- **F-OP-2 Retrait** : débite un compte si le solde est suffisant (pas de découvert en V1).
+- **F-OP-2 Retrait** : débite un compte si le solde après opération reste supérieur ou égal à `−découvert autorisé` (0 par défaut, donc solde suffisant). Un retrait sur un compte épargne est refusé (code 90).
 - **F-OP-3 Virement** : débite un compte source et crédite un compte destination dans la même opération ; si l'une des deux écritures échoue, l'autre est annulée.
 - **F-OP-4** : chaque opération réussie ou refusée génère une ligne d'historique (date, heure, type, comptes, montant, statut, motif de refus éventuel).
 - **F-OP-5** : un compte gelé ou clos refuse toute opération.
+- **F-OP-6** *(V1.1)* : un compte épargne accepte les dépôts et les virements reçus ; ses virements émis ne sont possibles que vers un compte courant du même client (sinon refus, code 90).
 
 ### 4.4 Intérêts et frais (batch mensuel)
 
 - **F-BAT-1** : un programme batch parcourt tous les comptes actifs.
-- **F-BAT-2** : il crédite les intérêts mensuels selon le taux paramétré.
-- **F-BAT-3** : il débite les frais de tenue de compte paramétrés.
+- **F-BAT-2** : il crédite les intérêts mensuels selon le taux paramétré (un taux pour les comptes courants, un taux pour les comptes épargne), sur les soldes positifs uniquement.
+- **F-BAT-3** : il débite les frais de tenue de compte paramétrés sur les comptes courants, tant que le solde reste supérieur ou égal à `−découvert autorisé` ; les comptes épargne n'en paient pas.
 - **F-BAT-4** : chaque écriture est enregistrée dans l'historique avec un type dédié (intérêt, frais).
 - **F-BAT-5** : il produit un rapport de fin de traitement (nombre de comptes traités, total des intérêts, total des frais, anomalies).
 - **F-BAT-6** : le batch est rejouable sans doublon : un second lancement sur la même période est refusé.
@@ -105,6 +110,7 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - **F-REL-1** : le client choisit un compte et une période.
 - **F-REL-2** : le programme génère un fichier texte formaté : en-tête (titulaire, numéro de compte, période), solde initial, liste des opérations, solde final, totaux débit et crédit.
 - **F-REL-3** : le solde initial plus les crédits moins les débits égale le solde final ; sinon le relevé signale une incohérence.
+- **F-REL-4** *(V1.1)* : le relevé peut aussi être exporté en CSV (séparateur `;`, point décimal). Les soldes négatifs sont affichés avec un signe `-`.
 
 ---
 
@@ -162,6 +168,8 @@ Les programmes communiquent par `CALL ... USING` avec des zones de liaison défi
 | Champ | Description |
 |---|---|
 | NUM-COMPTE | Numéro unique |
+| TYPE | Courant (C) ou épargne (E) |
+| DECOUVERT | Découvert autorisé (0 pour l'épargne) |
 | ID-CLIENT | Titulaire |
 | SOLDE | Solde courant (décimal signé) |
 | PLAFOND-JOUR | Plafond journalier de sorties |
@@ -202,7 +210,8 @@ Les valeurs ci-dessous sont des **valeurs par défaut proposées**, toutes modif
 | Échecs de PIN avant blocage | 3 |
 | Longueur du PIN | 4 à 6 chiffres |
 | Plafond journalier de sorties par compte | 1 000,00 |
-| Découvert autorisé | 0 |
+| Découvert autorisé | 0 (modifiable par compte courant) |
+| Taux d'intérêt annuel de l'épargne | 3,00 % |
 | Taux d'intérêt annuel | 1,50 % (appliqué au douzième chaque mois) |
 | Frais de tenue de compte mensuels | 2,00 |
 | Seuil d'alerte « montant anormal » | 5 fois la moyenne des opérations du compte |
@@ -238,7 +247,7 @@ intérêt = solde × taux annuel ÷ 12      (arrondi au centime, solde > 0 uniqu
 ### 8.2 Invariants vérifiés après chaque scénario
 
 - La somme de tous les soldes varie uniquement du montant des dépôts, retraits, intérêts et frais, jamais d'un virement.
-- Aucun solde négatif.
+- Aucun solde inférieur à `−découvert autorisé` du compte (donc aucun solde négatif tant que le découvert vaut 0, et jamais pour l'épargne).
 - Le nombre de lignes d'historique ne diminue jamais.
 
 ### 8.3 Critères d'acceptation de la V1
@@ -266,8 +275,7 @@ intérêt = solde × taux annuel ÷ 12      (arrondi au centime, solde > 0 uniqu
 ## 10. Évolutions possibles (hors V1)
 
 - Interface web ou API REST appelant les programmes COBOL.
-- Découvert autorisé et comptes épargne.
 - Virements programmés.
 - Règles de fraude plus riches (géolocalisation simulée, fréquence, horaires).
 - Migration du stockage vers une base SQL.
-- Export CSV des relevés.
+- Agios (intérêts débiteurs) sur découvert, comptes épargne plafonnés.

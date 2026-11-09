@@ -7,10 +7,10 @@ Mini core-banking en **GnuCOBOL** : fichiers indexés, menu console, authentific
 ## Fonctions
 
 - **Authentification** : identifiant + PIN (4 à 6 chiffres), blocage après 3 échecs, alertes de fraude (échecs rapprochés, blocage), déblocage par un administrateur.
-- **Comptes** : création, statuts actif / gelé / clos, plafond journalier par compte.
+- **Comptes** : comptes courants (avec découvert autorisé optionnel) et comptes épargne, statuts actif / gelé / clos, plafond journalier par compte, modification par l'administrateur.
 - **Opérations** : dépôt, retrait, virement atomique ; chaque tentative (acceptée ou refusée, avec motif) est écrite dans l'historique.
 - **Fraude** : plafond journalier de sorties (refus) et montant anormal par rapport à la moyenne du compte (alerte), journal d'alertes consultable par l'administrateur.
-- **Batch mensuel** : intérêts et frais de tenue, rejouable sans doublon (une période déjà traitée est refusée).
+- **Batch mensuel** : intérêts (taux propre à l'épargne) et frais de tenue (comptes courants seulement), rejouable sans doublon (une période déjà traitée est refusée).
 - **Relevés** : fichier texte formaté ou export CSV sur une période, avec contrôle de cohérence (solde initial + crédits − débits = solde final).
 
 ## Installation
@@ -33,9 +33,11 @@ Parcours d'essai :
 
 1. Connexion `1` avec le PIN de l'administrateur.
 2. Menu admin `1` : créer un client (Alice, rôle `C`, PIN 4321) → identifiant 2.
-3. Menu admin `2` : ouvrir un compte pour le client 2 (plafond `0` = valeur par défaut) → compte `1000000001`.
+3. Menu admin `2` : ouvrir un compte pour le client 2 (type courant par défaut, plafond `0` = valeur par défaut, découvert `0` = aucun) → compte `1000000001`.
 4. Déconnexion `0`, reconnexion avec `2` / 4321, dépôt `2`, retrait `3`, virement `4`.
 5. Relevé `6` : dates de début et de fin au format `AAAAMMJJ`, fichier écrit dans `reports/`.
+
+> **Mise à jour depuis la V1.0** : le format des comptes et de l'historique a changé (type de compte, découvert, soldes signés). Supprimer les anciens fichiers (`rm -f data/*.dat`) puis `make clean && make`.
 
 ## Démo
 
@@ -44,8 +46,8 @@ Parcours d'essai :
 | Identifiant ou nom | PIN | Rôle |
 |---|---|---|
 | 1 Admin | 1234 | administrateur |
-| 2 Alice | 4321 | client, comptes 1000000001 et 1000000002 |
-| 3 Bob | 5555 | client, compte 1000000003 (plafond 500.00) |
+| 2 Alice | 4321 | client, comptes courants 1000000001 et 1000000002, épargne 1000000005 |
+| 3 Bob | 5555 | client, compte 1000000003 (plafond 500.00, découvert autorisé 200.00, solde négatif après le batch) |
 | 4 Clara | 2468 | client **bloqué** (compte 1000000004) : à débloquer par l'admin |
 
 Le menu admin, option 4, montre les alertes `PLAFOND_JOUR`, `ECHECS_RAPIDES` et `PIN_BLOQUE`. Le relevé d'Alice est déjà dans `demo/reports/`.
@@ -106,7 +108,21 @@ Verification : OK
 | 5 Historique d'un compte | 5 Traitement mensuel |
 | 6 Relevé de compte | 6 Relevé d'un compte |
 | 7 Changer mon PIN | 7 Changer mon PIN |
-| 0 Déconnexion | 0 Déconnexion |
+| 0 Déconnexion | 8 Modifier un compte |
+| | 0 Déconnexion |
+
+### Comptes courants et épargne
+
+| | Courant | Épargne |
+|---|---|---|
+| Solde minimal | `−découvert autorisé` (0 par défaut) | 0 |
+| Dépôt, virement reçu | oui | oui |
+| Retrait | oui (jusqu'au découvert) | **non** (code 90) |
+| Virement émis | oui (jusqu'au découvert) | seulement vers un **courant du même client** (sinon code 90) |
+| Intérêts mensuels | `TAUX_ANNUEL_PCT`, sur solde positif | `TAUX_EPARGNE_PCT`, sur solde positif |
+| Frais de tenue | oui, tant que `solde − frais ≥ −découvert` | aucun |
+
+Le découvert est un plafond de solde négatif : aucun agio n'est calculé. Les soldes négatifs apparaissent avec un signe `-` dans les menus, l'historique et les relevés. Le menu admin `8` modifie le plafond journalier, le découvert (courant seulement) et le statut (actif, gelé, clos) d'un compte ; une saisie vide laisse la valeur actuelle.
 
 Un client n'accède qu'à ses propres comptes (code 74 sinon). Le rôle administrateur est vérifié avant chaque action réservée.
 
@@ -125,7 +141,7 @@ tests/        suites de tests
 |---|---|---|
 | `BANQUE` | connexion, menus, saisies | — |
 | `AUTH` | clients, PIN, blocage | 00, 22, 23, 81 (identifiant ou PIN faux), 82 (bloqué), 83 (PIN invalide) |
-| `COMPTE` | comptes, dépôt, retrait, virement | 00, 22, 23, 91 à 96, 98 |
+| `COMPTE` | comptes, dépôt, retrait, virement | 00, 22, 23, 90 (interdit sur épargne), 91 à 96, 98 |
 | `TRX` | historique des transactions (ajout seul) | 00 |
 | `FRAUDE` | plafond journalier, montant anormal, alertes d'échecs de PIN | 00, 96 (plafond), 97 (alerte seule) |
 | `RELEVE` | relevé de compte (texte ou CSV) sur une période | 00, 23, 73, 74, 75 (incohérent), 76 (format inconnu) |
@@ -137,6 +153,7 @@ Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexé
 ### Règles de conception
 
 - Montants en virgule fixe (`PIC S9(9)V99`), jamais de flottants.
+- Invariant : aucun solde en dessous de `−découvert autorisé` du compte (0 pour l'épargne).
 - Toute opération est journalisée, acceptée ou refusée, avec son motif ; le contrôle de fraude passe en dernier.
 - Le virement est atomique : les deux comptes sont validés avant d'écrire, et la source est restaurée si l'écriture de la destination échoue.
 - L'historique garde le solde après chaque opération, ce qui permet de vérifier un relevé.
@@ -153,7 +170,8 @@ Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexé
 | `PLAFOND_DEFAUT` | 1000.00 | plafond journalier des comptes sans plafond propre |
 | `FACTEUR_ANOMALIE` | 5 | alerte si montant > facteur × moyenne du compte |
 | `MIN_HISTORIQUE` | 3 | opérations minimales avant d'appliquer cette règle |
-| `TAUX_ANNUEL_PCT` | 1.50 | taux annuel des intérêts (%) |
+| `TAUX_ANNUEL_PCT` | 1.50 | taux annuel des intérêts des comptes courants (%) |
+| `TAUX_EPARGNE_PCT` | 3.00 | taux annuel des intérêts des comptes épargne (%) |
 | `FRAIS_TENUE` | 2.00 | frais mensuels de tenue de compte |
 | `MAX_ECHECS_PIN` | 3 | échecs de PIN avant blocage |
 | `ALERTE_ECHECS` | 2 | échecs de PIN consécutifs déclenchant l'alerte `ECHECS_RAPIDES` (sans blocage) |
@@ -163,15 +181,16 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 
 ## Tests
 
-`make test` lance huit suites, chacune sur des fichiers temporaires dans `tests/` (jamais `data/` ni `reports/`) :
+`make test` lance neuf suites, chacune sur des fichiers temporaires dans `tests/` (jamais `data/` ni `reports/`) :
 
 | Suite | Couvre |
 |---|---|
 | `test_param` | lecture, fichiers invalides, effet d'une valeur modifiée sur AUTH, FRAUDE et BATCH-INT |
-| `test_compte` | création, dépôt, retrait, virement, cas de refus, plafond et anomalie |
+| `test_compte` | création, dépôt, retrait, virement, cas de refus, plafond et anomalie, découvert et règles de l'épargne |
 | `test_auth` | création, PIN, blocage, déblocage, changement de PIN |
 | `test_batch` | intérêts, frais, arrondis, dépassement, rejeu, période interrompue |
-| `test_releve` | périodes, soldes, cohérence, droits, export CSV, bout en bout |
+| `test_releve` | périodes, soldes (y compris négatifs), cohérence, droits, export CSV, bout en bout |
+| `test_epargne` | batch : intérêts d'épargne, pas de frais sur l'épargne, frais limités par le découvert |
 | `test_trx` | numérotation de l'historique |
 | `test_menu.sh` | scénario complet par saisies redirigées (client, admin, blocage, batch, connexion par nom) |
 | `test_demo.sh` | le jeu de démonstration produit les soldes, alertes et relevés annoncés |
@@ -181,4 +200,5 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 - Un seul utilisateur à la fois : pas de gestion de concurrence entre plusieurs processus.
 - PIN pédagogique (voir l'avertissement en tête), fichiers non chiffrés.
 - Pas de devise ni de fuseau : une seule monnaie, date et heure du système.
+- Pas d'agios : un solde négatif ne produit pas d'intérêts débiteurs.
 - Le relevé est un fichier texte ; il n'y a pas d'export PDF.

@@ -94,8 +94,14 @@ COPY "PARAMS.cpy".
 01 WS-NOM-CHERCHE   PIC X(40).
 01 WS-CPT-CIBLE     PIC 9(10).
 01 WS-PLAFOND       PIC 9(7)V99.
+01 WS-DECOUVERT     PIC 9(7)V99.
+01 WS-TYPE-CPT      PIC X.
+01 WS-OPT           PIC X.
+01 WS-OPT-VAL       PIC 9(7)V99.
+01 WS-NOUV-STATUT   PIC X.
 *> affichage
 01 WS-ED            PIC Z(8)9.99.
+01 WS-EDS           PIC -(9)9.99.
 01 WS-ED2           PIC Z(10)9.99.
 01 WS-ED-NB         PIC Z(6)9.
 01 WS-DATE-ED       PIC X(10).
@@ -312,9 +318,18 @@ LISTER-MES-COMPTES.
                 NOT AT END
                     IF FC-ID-CLIENT = WS-USER-ID
                         ADD 1 TO WS-NB
-                        MOVE FC-SOLDE TO WS-ED
-                        DISPLAY "Compte " FC-NUM "  solde " WS-ED
-                                "  statut " FC-STATUT
+                        MOVE FC-SOLDE TO WS-EDS
+                        IF FC-EPARGNE
+                            DISPLAY "Compte " FC-NUM "  solde " WS-EDS
+                                    "  statut " FC-STATUT "  epargne"
+                        ELSE
+                            DISPLAY "Compte " FC-NUM "  solde " WS-EDS
+                                    "  statut " FC-STATUT "  courant"
+                            IF FC-DECOUVERT > 0
+                                MOVE FC-DECOUVERT TO WS-ED
+                                DISPLAY "   decouvert autorise " WS-ED
+                            END-IF
+                        END-IF
                     END-IF
             END-READ
         END-PERFORM
@@ -379,8 +394,8 @@ RELIRE-SOLDE.
     MOVE "L" TO WS-ACTION
     CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
     IF WS-STATUS = "00"
-        MOVE CPT-SOLDE TO WS-ED
-        DISPLAY "Nouveau solde : " WS-ED
+        MOVE CPT-SOLDE TO WS-EDS
+        DISPLAY "Nouveau solde : " WS-EDS
     END-IF
     MOVE "00" TO WS-STATUS.
 
@@ -477,14 +492,14 @@ AFFICHER-RESULTAT-RELEVE.
     IF WS-STATUS = "00" OR WS-STATUS = "75"
         MOVE REL-NB-OPS TO WS-ED-NB
         DISPLAY "Operations : " WS-ED-NB
-        MOVE REL-SOLDE-INIT TO WS-ED
-        DISPLAY "Solde initial : " WS-ED
+        MOVE REL-SOLDE-INIT TO WS-EDS
+        DISPLAY "Solde initial : " WS-EDS
         MOVE REL-TOT-CREDITS TO WS-ED2
         DISPLAY "Total credits : " WS-ED2
         MOVE REL-TOT-DEBITS TO WS-ED2
         DISPLAY "Total debits  : " WS-ED2
-        MOVE REL-SOLDE-FIN TO WS-ED
-        DISPLAY "Solde final   : " WS-ED
+        MOVE REL-SOLDE-FIN TO WS-EDS
+        DISPLAY "Solde final   : " WS-EDS
         IF WS-FORMAT-REL = "C"
             MOVE ".csv" TO WS-EXT-REL
         ELSE
@@ -524,9 +539,11 @@ MENU-ADMIN.
         DISPLAY "5. Traitement mensuel (interets et frais)"
         DISPLAY "6. Releve d'un compte"
         DISPLAY "7. Changer mon PIN"
+        DISPLAY "8. Modifier un compte"
         DISPLAY "0. Deconnexion"
         PERFORM LIRE-CHOIX
         EVALUATE WS-CHOIX(1:1)
+            WHEN "8" PERFORM ADMIN-MODIFIER-COMPTE
             WHEN "1" PERFORM ADMIN-CREER-CLIENT
             WHEN "2" PERFORM ADMIN-OUVRIR-COMPTE
             WHEN "3" PERFORM ADMIN-DEBLOQUER
@@ -580,14 +597,9 @@ ADMIN-OUVRIR-COMPTE.
             MOVE WS-NUM-VAL TO WS-ID-CLIENT
             PERFORM VERIFIER-CLIENT-EXISTE
             IF WS-STATUS = "00"
-                DISPLAY "Plafond journalier (0 = 1000.00) : "
-                        WITH NO ADVANCING
-                ACCEPT WS-IN
-                PERFORM LIRE-MONTANT-TEXTE
-                IF WS-MONT-OK = "O" OR FUNCTION TRIM(WS-IN) = "0"
+                PERFORM SAISIR-PARAMS-COMPTE
+                IF WS-OPT = "O"
                     PERFORM CREER-COMPTE
-                ELSE
-                    DISPLAY "Montant invalide"
                 END-IF
             ELSE
                 PERFORM MESSAGE-STATUT
@@ -595,18 +607,73 @@ ADMIN-OUVRIR-COMPTE.
         END-IF
     END-IF.
 
-CREER-COMPTE.
-    IF WS-MONT-OK = "O"
-        MOVE WS-MONTANT TO WS-PLAFOND
-    ELSE
-        MOVE 0 TO WS-PLAFOND
+*> Saisie du type, du plafond et du decouvert d'un nouveau compte.
+*> WS-OPT = "O" si tout est valide (WS-TYPE-CPT, WS-PLAFOND, WS-DECOUVERT)
+SAISIR-PARAMS-COMPTE.
+    MOVE "N" TO WS-OPT
+    MOVE "C" TO WS-TYPE-CPT
+    MOVE 0 TO WS-PLAFOND WS-DECOUVERT
+    DISPLAY "Type (1 courant, 2 epargne) [1] : " WITH NO ADVANCING
+    ACCEPT WS-IN
+    EVALUATE FUNCTION TRIM(WS-IN)
+        WHEN SPACES
+        WHEN "1"
+            MOVE "C" TO WS-TYPE-CPT
+            MOVE "O" TO WS-OPT
+        WHEN "2"
+            MOVE "E" TO WS-TYPE-CPT
+            MOVE "O" TO WS-OPT
+        WHEN OTHER
+            DISPLAY "Type invalide"
+    END-EVALUATE
+    IF WS-OPT = "O"
+        MOVE "N" TO WS-OPT
+        DISPLAY "Plafond journalier (0 = 1000.00) : " WITH NO ADVANCING
+        ACCEPT WS-IN
+        PERFORM LIRE-MONTANT-ZERO-OK
+        IF WS-MONT-OK = "O"
+            MOVE WS-MONTANT TO WS-PLAFOND
+            MOVE "O" TO WS-OPT
+        ELSE
+            DISPLAY "Montant invalide"
+        END-IF
     END-IF
+    IF WS-OPT = "O" AND WS-TYPE-CPT = "C"
+        MOVE "N" TO WS-OPT
+        DISPLAY "Decouvert autorise (0 = aucun) : " WITH NO ADVANCING
+        ACCEPT WS-IN
+        PERFORM LIRE-MONTANT-ZERO-OK
+        IF WS-MONT-OK = "O"
+            MOVE WS-MONTANT TO WS-DECOUVERT
+            MOVE "O" TO WS-OPT
+        ELSE
+            DISPLAY "Montant invalide"
+        END-IF
+    END-IF.
+
+*> WS-IN -> WS-MONTANT ; WS-MONT-OK = "O" si 0 <= montant <= 9999999.99
+*> avec 2 decimales au plus (le zero est accepte)
+LIRE-MONTANT-ZERO-OK.
+    MOVE "N" TO WS-MONT-OK
+    INSPECT WS-IN REPLACING ALL "," BY "."
+    IF FUNCTION TEST-NUMVAL(WS-IN) = 0
+        IF FUNCTION NUMVAL(WS-IN) >= 0
+           AND FUNCTION NUMVAL(WS-IN) <= 9999999.99
+           AND FUNCTION MOD(FUNCTION NUMVAL(WS-IN) * 100, 1) = 0
+            MOVE FUNCTION NUMVAL(WS-IN) TO WS-MONTANT
+            MOVE "O" TO WS-MONT-OK
+        END-IF
+    END-IF.
+
+CREER-COMPTE.
     PERFORM PROCHAIN-COMPTE
     INITIALIZE COMPTE-REC
     COMPUTE CPT-NUM = WS-MAX + 1
     MOVE WS-ID-CLIENT TO CPT-ID-CLIENT
     MOVE 0 TO CPT-SOLDE
     MOVE WS-PLAFOND TO CPT-PLAFOND
+    MOVE WS-TYPE-CPT TO CPT-TYPE
+    MOVE WS-DECOUVERT TO CPT-DECOUVERT
     MOVE "A" TO CPT-STATUT
     ACCEPT WS-AUJ FROM DATE YYYYMMDD
     MOVE WS-AUJ TO CPT-DATE-OUV
@@ -614,8 +681,97 @@ CREER-COMPTE.
     CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
     IF WS-STATUS = "00"
         DISPLAY "Compte ouvert : " CPT-NUM
+        IF CPT-EPARGNE
+            DISPLAY "Type : epargne"
+        ELSE
+            DISPLAY "Type : courant"
+        END-IF
     ELSE
         PERFORM MESSAGE-STATUT
+    END-IF.
+
+*> Modification d'un compte : plafond, decouvert (courant seulement), statut.
+*> Une saisie vide laisse la valeur actuelle.
+ADMIN-MODIFIER-COMPTE.
+    IF WS-USER-ROLE NOT = "A"
+        DISPLAY "Reserve a l'administrateur"
+    ELSE
+        DISPLAY "Numero du compte : " WITH NO ADVANCING
+        ACCEPT WS-IN
+        PERFORM CONVERTIR-NUM
+        IF WS-NUM-OK NOT = "O"
+            DISPLAY "Numero invalide"
+        ELSE
+            MOVE WS-NUM-VAL TO CPT-NUM
+            MOVE "L" TO WS-ACTION
+            CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST
+                                WS-STATUS
+            IF WS-STATUS = "00"
+                PERFORM MODIFIER-COMPTE-SAISIES
+            ELSE
+                PERFORM MESSAGE-STATUT
+            END-IF
+        END-IF
+    END-IF.
+
+MODIFIER-COMPTE-SAISIES.
+    MOVE "O" TO WS-OPT
+    MOVE CPT-PLAFOND TO WS-ED
+    DISPLAY "Plafond actuel " WS-ED
+            " - nouveau (vide = inchange) : " WITH NO ADVANCING
+    ACCEPT WS-IN
+    IF FUNCTION TRIM(WS-IN) NOT = SPACES
+        PERFORM LIRE-MONTANT-ZERO-OK
+        IF WS-MONT-OK = "O"
+            MOVE WS-MONTANT TO CPT-PLAFOND
+        ELSE
+            DISPLAY "Montant invalide"
+            MOVE "N" TO WS-OPT
+        END-IF
+    END-IF
+    IF WS-OPT = "O" AND NOT CPT-EPARGNE
+        MOVE CPT-DECOUVERT TO WS-ED
+        DISPLAY "Decouvert actuel " WS-ED
+                " - nouveau (vide = inchange) : " WITH NO ADVANCING
+        ACCEPT WS-IN
+        IF FUNCTION TRIM(WS-IN) NOT = SPACES
+            PERFORM LIRE-MONTANT-ZERO-OK
+            IF WS-MONT-OK = "O"
+                MOVE WS-MONTANT TO CPT-DECOUVERT
+            ELSE
+                DISPLAY "Montant invalide"
+                MOVE "N" TO WS-OPT
+            END-IF
+        END-IF
+    END-IF
+    IF WS-OPT = "O"
+        DISPLAY "Statut actuel " CPT-STATUT
+                " (A actif, G gele, C clos) - nouveau (vide = inchange) : "
+                WITH NO ADVANCING
+        ACCEPT WS-IN
+        EVALUATE FUNCTION UPPER-CASE(FUNCTION TRIM(WS-IN))
+            WHEN SPACES
+                CONTINUE
+            WHEN "A"
+            WHEN "G"
+            WHEN "C"
+                MOVE FUNCTION UPPER-CASE(WS-IN(1:1)) TO CPT-STATUT
+            WHEN OTHER
+                DISPLAY "Statut invalide"
+                MOVE "N" TO WS-OPT
+        END-EVALUATE
+    END-IF
+    IF WS-OPT = "O"
+        MOVE "U" TO WS-ACTION
+        CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST
+                            WS-STATUS
+        IF WS-STATUS = "00"
+            DISPLAY "Compte modifie."
+        ELSE
+            PERFORM MESSAGE-STATUT
+        END-IF
+    ELSE
+        DISPLAY "Aucune modification."
     END-IF.
 
 ADMIN-DEBLOQUER.
@@ -926,6 +1082,7 @@ MESSAGE-STATUT.
         WHEN "81" DISPLAY "Identifiant ou PIN incorrect."
         WHEN "82" DISPLAY "Client bloque : voir un administrateur."
         WHEN "83" DISPLAY "PIN invalide (4 a 6 chiffres)."
+        WHEN "90" DISPLAY "Operation interdite sur un compte epargne."
         WHEN "91" DISPLAY "Montant invalide."
         WHEN "92" DISPLAY "Compte non actif."
         WHEN "93" DISPLAY "Solde insuffisant."
