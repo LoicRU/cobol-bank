@@ -57,7 +57,8 @@ printf '%s\n' \
     3 1000000001 -5 \
     1 \
     5 1000000001 \
-    6 1000000001 $AUJ $AUJ \
+    6 1000000001 $AUJ $AUJ "" \
+    6 1000000001 $AUJ $AUJ 2 \
     6 1000000002 $AUJ $AUJ \
     0 0 | $BIN > $T/MENU_2.out 2>&1
 verifie "connexion Alice" $T/MENU_2.out "Bonjour Alice"
@@ -74,6 +75,10 @@ verifie "releve : total debits 150.50" $T/MENU_2.out "Total debits  :         15
 verifie "releve : solde final 349.50" $T/MENU_2.out "Solde final   :       349.50"
 verifie "releve d'un compte tiers refuse" $T/MENU_2.out "Ce compte n'est pas a vous"
 verifie "fichier releve ecrit" $T/RELEVE_1000000001_${AUJ}_${AUJ}.txt "Verification : OK"
+verifie "format choisi : texte par defaut" $T/MENU_2.out "_${AUJ}_${AUJ}.txt"
+verifie "format choisi : CSV" $T/MENU_2.out "_${AUJ}_${AUJ}.csv"
+verifie "fichier CSV ecrit" $T/RELEVE_1000000001_${AUJ}_${AUJ}.csv "Verification;OK"
+verifie "chemin affiche = dossier reel" $T/MENU_2.out "Fichier : tests/RELEVE_"
 
 echo "MENU : PIN faux, blocage, alerte, deblocage"
 printf '%s\n' 1 2 0000 1 2 0000 1 2 0000 1 2 4321 \

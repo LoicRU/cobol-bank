@@ -1,7 +1,7 @@
 COBC   = cobc
 FLAGS  = -free -I copybooks
 
-.PHONY: all test clean run
+.PHONY: all test clean run demo run-demo
 
 all: bin/banque
 
@@ -12,6 +12,12 @@ bin/banque: src/BANQUE.cob $(MODULES) $(wildcard copybooks/*.cpy)
 
 run: bin/banque
 	./bin/banque
+
+demo: bin/banque
+	sh tests/demo.sh
+
+run-demo: bin/banque
+	sh tests/demo.sh run
 
 bin/test_compte: tests/test_compte.cob src/PARAM.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob copybooks/COMPTE.cpy copybooks/TRX.cpy copybooks/ALERTE.cpy copybooks/PARAMS.cpy
 	$(COBC) -x $(FLAGS) -o $@ tests/test_compte.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob src/PARAM.cob
@@ -39,6 +45,8 @@ test: bin/test_trx bin/test_param bin/test_compte bin/test_auth bin/test_batch b
 	./bin/test_batch
 	./bin/test_releve
 	sh tests/test_menu.sh
+	sh tests/test_demo.sh
 
 clean:
-	rm -f bin/banque bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_param bin/test_trx tests/*.dat tests/*.txt tests/*.idx
+	rm -f bin/banque bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_param bin/test_trx tests/*.dat tests/*.txt tests/*.csv tests/*.idx
+	rm -rf demo tests/DEMO_TMP

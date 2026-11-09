@@ -87,6 +87,9 @@ COPY "PARAMS.cpy".
 01 WS-NB            PIC 9(5).
 01 WS-ID-CLIENT     PIC 9(6).
 01 WS-ID-TROUVE     PIC X.
+01 WS-FORMAT-REL    PIC X.
+01 WS-EXT-REL       PIC X(4).
+01 WS-RELEVE-DIR    PIC X(80).
 01 WS-NB-HOMONYMES  PIC 9(3).
 01 WS-NOM-CHERCHE   PIC X(40).
 01 WS-CPT-CIBLE     PIC 9(10).
@@ -159,6 +162,10 @@ PREPARER.
     MOVE "data/ALERTES.dat" TO WS-ALR-NAME
     ACCEPT WS-ALR-NAME FROM ENVIRONMENT "ALERTES_FILE"
         ON EXCEPTION MOVE "data/ALERTES.dat" TO WS-ALR-NAME
+    END-ACCEPT
+    MOVE "reports" TO WS-RELEVE-DIR
+    ACCEPT WS-RELEVE-DIR FROM ENVIRONMENT "RELEVE_DIR"
+        ON EXCEPTION MOVE "reports" TO WS-RELEVE-DIR
     END-ACCEPT.
 
 *> Aucun client : on cree l'administrateur (id 1)
@@ -445,8 +452,18 @@ EDITER-RELEVE.
             IF WS-NUM-OK = "O" AND WS-NUM-VAL <= 99999999
                 MOVE WS-NUM-VAL TO WS-FIN-P
                 MOVE CPT-NUM TO WS-CPT-CIBLE
+                DISPLAY "Format (1 texte, 2 CSV) [1] : "
+                        WITH NO ADVANCING
+                MOVE SPACES TO WS-IN
+                ACCEPT WS-IN
+                IF WS-IN(1:1) = "2"
+                    MOVE "C" TO WS-FORMAT-REL
+                ELSE
+                    MOVE "T" TO WS-FORMAT-REL
+                END-IF
                 CALL "RELEVE" USING WS-ID-CLIENT WS-CPT-CIBLE WS-DEB
-                                    WS-FIN-P RELEVE-RES WS-STATUS
+                                    WS-FIN-P WS-FORMAT-REL RELEVE-RES
+                                    WS-STATUS
                 PERFORM AFFICHER-RESULTAT-RELEVE
             ELSE
                 DISPLAY "Date invalide"
@@ -468,8 +485,13 @@ AFFICHER-RESULTAT-RELEVE.
         DISPLAY "Total debits  : " WS-ED2
         MOVE REL-SOLDE-FIN TO WS-ED
         DISPLAY "Solde final   : " WS-ED
-        DISPLAY "Fichier : reports/RELEVE_" WS-CPT-CIBLE "_" WS-DEB "_"
-                WS-FIN-P ".txt"
+        IF WS-FORMAT-REL = "C"
+            MOVE ".csv" TO WS-EXT-REL
+        ELSE
+            MOVE ".txt" TO WS-EXT-REL
+        END-IF
+        DISPLAY "Fichier : " FUNCTION TRIM(WS-RELEVE-DIR) "/RELEVE_"
+                WS-CPT-CIBLE "_" WS-DEB "_" WS-FIN-P WS-EXT-REL
     END-IF
     IF WS-STATUS NOT = "00"
         PERFORM MESSAGE-STATUT
@@ -899,6 +921,7 @@ MESSAGE-STATUT.
         WHEN "72" DISPLAY "Periode interrompue : verification manuelle."
         WHEN "73" DISPLAY "Periode invalide."
         WHEN "74" DISPLAY "Ce compte n'est pas a vous."
+        WHEN "76" DISPLAY "Format de releve invalide."
         WHEN "75" DISPLAY "Releve ecrit mais INCOHERENT : a verifier."
         WHEN "81" DISPLAY "Identifiant ou PIN incorrect."
         WHEN "82" DISPLAY "Client bloque : voir un administrateur."

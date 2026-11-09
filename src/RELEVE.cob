@@ -1,16 +1,19 @@
 *> RELEVE.cob - releve de compte (fichier texte formate)
 *>
 *> Appel : CALL "RELEVE" USING LK-ID-CLIENT LK-CPT-NUM LK-DEBUT LK-FIN
-*>                             LK-RELEVE-RES LK-STATUS
+*>                             LK-FORMAT LK-RELEVE-RES LK-STATUS
 *>   LK-ID-CLIENT : client qui demande le releve ; il doit etre titulaire du
 *>                  compte. 0 = administrateur, aucun controle d'appartenance
 *>                  (l'appelant verifie le role).
 *>   LK-DEBUT, LK-FIN : periode AAAAMMJJ, bornes incluses
+*>   LK-FORMAT : "T" fichier texte formate (.txt), "C" fichier CSV (.csv,
+*>               separateur ";", montants avec point decimal, sans accents)
 *>   LK-RELEVE-RES : renvoie nombre d'operations, solde initial et final,
 *>                   total des debits et des credits (copybook RELEVE.cpy)
 *>   LK-STATUS :
 *>     00 releve ecrit et coherent   23 compte introuvable
 *>     73 periode invalide           74 le compte n'appartient pas au client
+*>     76 format inconnu (ni "T" ni "C")
 *>     75 releve ecrit mais INCOHERENT : solde initial + credits - debits
 *>        est different du solde final, a verifier
 *>     autre : FILE STATUS d'une erreur d'entree/sortie
@@ -25,6 +28,7 @@
 *> Fichiers : TRX_FILE (data/TRANSACTIONS.dat), COMPTES_FILE
 *>   (data/COMPTES.dat), CLIENTS_FILE (data/CLIENTS.dat),
 *>   RELEVE_DIR (reports) pour le releve RELEVE_<compte>_<debut>_<fin>.txt
+*>   ou .csv
 IDENTIFICATION DIVISION.
 PROGRAM-ID. RELEVE.
 
@@ -70,6 +74,8 @@ WORKING-STORAGE SECTION.
 01 WS-RELEVE-DIR       PIC X(80).
 01 WS-RELEVE-NAME      PIC X(140).
 01 WS-FIN              PIC X.
+01 WS-PTR              PIC 9(3).
+01 WS-ED-L             PIC Z(10)9.99.
 01 WS-NOM              PIC X(30).
 01 WS-SOLDE-ACTUEL     PIC S9(11)V99.
 01 WS-AUJOURDHUI       PIC 9(8).
@@ -101,6 +107,8 @@ WORKING-STORAGE SECTION.
 01 WS-LIGNE            PIC X(100).
 01 WS-DATE-ED          PIC X(10).
 01 WS-DATE-DEB         PIC X(10).
+01 WS-NOM-CSV          PIC X(31).
+01 WS-NOM-CSV2         PIC X(31).
 01 WS-DATE-SRC         PIC 9(8).
 01 WS-HEURE-SRC        PIC 9(6).
 01 WS-LIGNE-OP.
@@ -123,16 +131,22 @@ LINKAGE SECTION.
 01 LK-CPT-NUM          PIC 9(10).
 01 LK-DEBUT            PIC 9(8).
 01 LK-FIN              PIC 9(8).
+01 LK-FORMAT           PIC X.
 COPY "RELEVE.cpy" REPLACING LEADING ==REL-== BY ==LK-REL-==
                             ==RELEVE-RES== BY ==LK-RELEVE-RES==.
 01 LK-STATUS           PIC XX.
 
 PROCEDURE DIVISION USING LK-ID-CLIENT LK-CPT-NUM LK-DEBUT LK-FIN
-                         LK-RELEVE-RES LK-STATUS.
+                         LK-FORMAT LK-RELEVE-RES LK-STATUS.
 MAIN-PARA.
     MOVE "00" TO LK-STATUS
     INITIALIZE LK-RELEVE-RES
     PERFORM LIRE-ENVIRONNEMENT
+
+    IF LK-FORMAT NOT = "T" AND LK-FORMAT NOT = "C"
+        MOVE "76" TO LK-STATUS
+        GOBACK
+    END-IF
 
     IF FUNCTION TEST-DATE-YYYYMMDD(LK-DEBUT) NOT = 0
        OR FUNCTION TEST-DATE-YYYYMMDD(LK-FIN) NOT = 0
@@ -349,6 +363,7 @@ CLASSER-OPERATION.
 
 ECRIRE-RELEVE.
     MOVE SPACES TO WS-RELEVE-NAME
+    MOVE 1 TO WS-PTR
     STRING WS-RELEVE-DIR DELIMITED BY SPACE
            "/RELEVE_" DELIMITED BY SIZE
            LK-CPT-NUM DELIMITED BY SIZE
@@ -356,15 +371,27 @@ ECRIRE-RELEVE.
            LK-DEBUT DELIMITED BY SIZE
            "_" DELIMITED BY SIZE
            LK-FIN DELIMITED BY SIZE
-           ".txt" DELIMITED BY SIZE
-           INTO WS-RELEVE-NAME
+           INTO WS-RELEVE-NAME WITH POINTER WS-PTR
+    IF LK-FORMAT = "C"
+        STRING ".csv" DELIMITED BY SIZE
+               INTO WS-RELEVE-NAME WITH POINTER WS-PTR
+    ELSE
+        STRING ".txt" DELIMITED BY SIZE
+               INTO WS-RELEVE-NAME WITH POINTER WS-PTR
+    END-IF
     OPEN OUTPUT F-RELEVE
     IF WS-FS-REL NOT = "00"
         MOVE WS-FS-REL TO LK-STATUS
     ELSE
-        PERFORM ECRIRE-ENTETE
-        PERFORM ECRIRE-OPERATIONS
-        PERFORM ECRIRE-PIED
+        IF LK-FORMAT = "C"
+            PERFORM ECRIRE-ENTETE-CSV
+            PERFORM ECRIRE-OPERATIONS
+            PERFORM ECRIRE-PIED-CSV
+        ELSE
+            PERFORM ECRIRE-ENTETE
+            PERFORM ECRIRE-OPERATIONS
+            PERFORM ECRIRE-PIED
+        END-IF
         CLOSE F-RELEVE
     END-IF.
 
@@ -440,7 +467,11 @@ ECRIRE-OPERATIONS.
                     PERFORM EXAMINER-LIGNE
                     IF WS-CONCERNE = "O"
                        AND TRX-DATE >= LK-DEBUT AND TRX-DATE <= LK-FIN
-                        PERFORM ECRIRE-OPERATION
+                        IF LK-FORMAT = "C"
+                            PERFORM ECRIRE-OPERATION-CSV
+                        ELSE
+                            PERFORM ECRIRE-OPERATION
+                        END-IF
                     END-IF
             END-READ
         END-PERFORM
@@ -510,6 +541,121 @@ ECRIRE-PIED.
                DELIMITED BY SIZE
                " - debits different du solde final)" DELIMITED BY SIZE
                INTO WS-LIGNE
+    END-IF
+    PERFORM ECRIRE-LIGNE.
+
+*> ---- format CSV : separateur ";", montants avec point, sans espaces ----
+ECRIRE-ENTETE-CSV.
+    *> nom : pas de ";" et pas de debut de formule (=, +, -, @) pour un tableur
+    MOVE WS-NOM TO WS-NOM-CSV
+    INSPECT WS-NOM-CSV REPLACING ALL ";" BY ","
+    IF WS-NOM-CSV(1:1) = "=" OR "+" OR "-" OR "@"
+        MOVE SPACES TO WS-NOM-CSV2
+        STRING "'" DELIMITED BY SIZE
+               WS-NOM-CSV DELIMITED BY SIZE INTO WS-NOM-CSV2
+        MOVE WS-NOM-CSV2 TO WS-NOM-CSV
+    END-IF
+    MOVE SPACES TO WS-LIGNE
+    STRING "Titulaire;" DELIMITED BY SIZE
+           FUNCTION TRIM(WS-NOM-CSV) DELIMITED BY SIZE INTO WS-LIGNE
+    PERFORM ECRIRE-LIGNE
+
+    MOVE SPACES TO WS-LIGNE
+    STRING "Compte;" DELIMITED BY SIZE
+           LK-CPT-NUM DELIMITED BY SIZE INTO WS-LIGNE
+    PERFORM ECRIRE-LIGNE
+
+    MOVE LK-DEBUT TO WS-DATE-SRC
+    PERFORM FORMATER-DATE
+    MOVE SPACES TO WS-LIGNE
+    STRING "Periode_debut;" DELIMITED BY SIZE
+           WS-DATE-ED DELIMITED BY SIZE INTO WS-LIGNE
+    PERFORM ECRIRE-LIGNE
+
+    MOVE LK-FIN TO WS-DATE-SRC
+    PERFORM FORMATER-DATE
+    MOVE SPACES TO WS-LIGNE
+    STRING "Periode_fin;" DELIMITED BY SIZE
+           WS-DATE-ED DELIMITED BY SIZE INTO WS-LIGNE
+    PERFORM ECRIRE-LIGNE
+
+    MOVE WS-INIT TO WS-ED-L
+    MOVE SPACES TO WS-LIGNE
+    STRING "Solde_initial;" DELIMITED BY SIZE
+           FUNCTION TRIM(WS-ED-L) DELIMITED BY SIZE INTO WS-LIGNE
+    PERFORM ECRIRE-LIGNE
+
+    MOVE "date;heure;operation;compte_lie;debit;credit;solde"
+        TO WS-LIGNE
+    PERFORM ECRIRE-LIGNE.
+
+ECRIRE-OPERATION-CSV.
+    MOVE SPACES TO WS-LIGNE
+    MOVE 1 TO WS-PTR
+    MOVE TRX-DATE TO WS-DATE-SRC
+    PERFORM FORMATER-DATE
+    MOVE TRX-HEURE TO WS-HEURE-SRC
+    STRING WS-DATE-ED DELIMITED BY SIZE
+           ";" DELIMITED BY SIZE
+           WS-HEURE-SRC(1:2) DELIMITED BY SIZE
+           ":" DELIMITED BY SIZE
+           WS-HEURE-SRC(3:2) DELIMITED BY SIZE
+           ";" DELIMITED BY SIZE
+           FUNCTION TRIM(WS-LIBELLE) DELIMITED BY SIZE
+           ";" DELIMITED BY SIZE
+        INTO WS-LIGNE WITH POINTER WS-PTR
+    IF WS-CONTRE NOT = 0
+        STRING WS-CONTRE DELIMITED BY SIZE
+            INTO WS-LIGNE WITH POINTER WS-PTR
+    END-IF
+    STRING ";" DELIMITED BY SIZE INTO WS-LIGNE WITH POINTER WS-PTR
+    IF WS-DEBIT NOT = 0
+        MOVE WS-DEBIT TO WS-ED-L
+        STRING FUNCTION TRIM(WS-ED-L) DELIMITED BY SIZE
+            INTO WS-LIGNE WITH POINTER WS-PTR
+    END-IF
+    STRING ";" DELIMITED BY SIZE INTO WS-LIGNE WITH POINTER WS-PTR
+    IF WS-CREDIT NOT = 0
+        MOVE WS-CREDIT TO WS-ED-L
+        STRING FUNCTION TRIM(WS-ED-L) DELIMITED BY SIZE
+            INTO WS-LIGNE WITH POINTER WS-PTR
+    END-IF
+    MOVE WS-APRES TO WS-ED-L
+    STRING ";" DELIMITED BY SIZE
+           FUNCTION TRIM(WS-ED-L) DELIMITED BY SIZE
+        INTO WS-LIGNE WITH POINTER WS-PTR
+    PERFORM ECRIRE-LIGNE.
+
+ECRIRE-PIED-CSV.
+    MOVE WS-FINAL TO WS-ED-L
+    MOVE SPACES TO WS-LIGNE
+    STRING "Solde_final;" DELIMITED BY SIZE
+           FUNCTION TRIM(WS-ED-L) DELIMITED BY SIZE INTO WS-LIGNE
+    PERFORM ECRIRE-LIGNE
+
+    MOVE WS-TOT-DEB TO WS-ED-L
+    MOVE SPACES TO WS-LIGNE
+    STRING "Total_debits;" DELIMITED BY SIZE
+           FUNCTION TRIM(WS-ED-L) DELIMITED BY SIZE INTO WS-LIGNE
+    PERFORM ECRIRE-LIGNE
+
+    MOVE WS-TOT-CRED TO WS-ED-L
+    MOVE SPACES TO WS-LIGNE
+    STRING "Total_credits;" DELIMITED BY SIZE
+           FUNCTION TRIM(WS-ED-L) DELIMITED BY SIZE INTO WS-LIGNE
+    PERFORM ECRIRE-LIGNE
+
+    MOVE WS-NB-OPS TO WS-ED-NB
+    MOVE SPACES TO WS-LIGNE
+    STRING "Operations;" DELIMITED BY SIZE
+           FUNCTION TRIM(WS-ED-NB) DELIMITED BY SIZE INTO WS-LIGNE
+    PERFORM ECRIRE-LIGNE
+
+    MOVE SPACES TO WS-LIGNE
+    IF LK-REL-COHERENT = "O"
+        MOVE "Verification;OK" TO WS-LIGNE
+    ELSE
+        MOVE "Verification;INCOHERENCE" TO WS-LIGNE
     END-IF
     PERFORM ECRIRE-LIGNE.
 

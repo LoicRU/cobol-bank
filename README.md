@@ -11,7 +11,7 @@ Mini core-banking en **GnuCOBOL** : fichiers indexés, menu console, authentific
 - **Opérations** : dépôt, retrait, virement atomique ; chaque tentative (acceptée ou refusée, avec motif) est écrite dans l'historique.
 - **Fraude** : plafond journalier de sorties (refus) et montant anormal par rapport à la moyenne du compte (alerte), journal d'alertes consultable par l'administrateur.
 - **Batch mensuel** : intérêts et frais de tenue, rejouable sans doublon (une période déjà traitée est refusée).
-- **Relevés** : fichier texte formaté sur une période, avec contrôle de cohérence (solde initial + crédits − débits = solde final).
+- **Relevés** : fichier texte formaté ou export CSV sur une période, avec contrôle de cohérence (solde initial + crédits − débits = solde final).
 
 ## Installation
 
@@ -20,6 +20,8 @@ sudo apt install gnucobol      # testé avec GnuCOBOL 3.1.2
 make                           # compile bin/banque
 make run                       # lance le programme
 make test                      # compile et lance toutes les suites de tests
+make demo                      # cree un jeu de donnees de demonstration dans demo/
+make run-demo                  # lance le programme sur ces donnees
 make clean                     # supprime exécutables et fichiers de test
 ```
 
@@ -34,6 +36,41 @@ Parcours d'essai :
 3. Menu admin `2` : ouvrir un compte pour le client 2 (plafond `0` = valeur par défaut) → compte `1000000001`.
 4. Déconnexion `0`, reconnexion avec `2` / 4321, dépôt `2`, retrait `3`, virement `4`.
 5. Relevé `6` : dates de début et de fin au format `AAAAMMJJ`, fichier écrit dans `reports/`.
+
+## Démo
+
+`make demo` crée `demo/` (jamais `data/`) en rejouant un scénario sur le vrai programme : clients, comptes, dépôts, retraits, virements, un retrait refusé, un plafond dépassé, un client bloqué et le batch mensuel. `make run-demo` lance ensuite le programme sur ces données.
+
+| Identifiant ou nom | PIN | Rôle |
+|---|---|---|
+| 1 Admin | 1234 | administrateur |
+| 2 Alice | 4321 | client, comptes 1000000001 et 1000000002 |
+| 3 Bob | 5555 | client, compte 1000000003 (plafond 500.00) |
+| 4 Clara | 2468 | client **bloqué** (compte 1000000004) : à débloquer par l'admin |
+
+Le menu admin, option 4, montre les alertes `PLAFOND_JOUR`, `ECHECS_RAPIDES` et `PIN_BLOQUE`. Le relevé d'Alice est déjà dans `demo/reports/`.
+
+### Export CSV
+
+Au moment de demander un relevé, le menu propose le format : `1` texte (par défaut) ou `2` CSV. Le fichier `RELEVE_<compte>_<début>_<fin>.csv` utilise le séparateur `;` (s'ouvre directement dans Excel en français), des montants avec point décimal et du texte sans accents :
+
+```
+Titulaire;Alice
+Compte;1000000001
+Periode_debut;2026-11-09
+Periode_fin;2026-11-09
+Solde_initial;0.00
+date;heure;operation;compte_lie;debit;credit;solde
+2026-11-09;14:03;DEPOT;;;500.00;500.00
+2026-11-09;14:03;RETRAIT;;120.50;;379.50
+Solde_final;379.50
+Total_debits;120.50
+Total_credits;500.00
+Operations;2
+Verification;OK
+```
+
+Un nom de titulaire qui commencerait par `=`, `+`, `-` ou `@` est préfixé d'une apostrophe pour ne pas être interprété comme une formule par un tableur.
 
 ### Exemple de relevé
 
@@ -91,7 +128,7 @@ tests/        suites de tests
 | `COMPTE` | comptes, dépôt, retrait, virement | 00, 22, 23, 91 à 96, 98 |
 | `TRX` | historique des transactions (ajout seul) | 00 |
 | `FRAUDE` | plafond journalier, montant anormal, alertes d'échecs de PIN | 00, 96 (plafond), 97 (alerte seule) |
-| `RELEVE` | relevé de compte sur une période | 00, 23, 73, 74, 75 (incohérent) |
+| `RELEVE` | relevé de compte (texte ou CSV) sur une période | 00, 23, 73, 74, 75 (incohérent), 76 (format inconnu) |
 | `BATCH-INT` | intérêts et frais mensuels | 00, 71 (déjà traitée), 72 (interrompue), 73 |
 | `PARAM` | lecture et validation de la configuration | 00, 61, 62, 63 |
 
@@ -126,7 +163,7 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 
 ## Tests
 
-`make test` lance six suites, chacune sur des fichiers temporaires dans `tests/` (jamais `data/` ni `reports/`) :
+`make test` lance huit suites, chacune sur des fichiers temporaires dans `tests/` (jamais `data/` ni `reports/`) :
 
 | Suite | Couvre |
 |---|---|
@@ -134,8 +171,10 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 | `test_compte` | création, dépôt, retrait, virement, cas de refus, plafond et anomalie |
 | `test_auth` | création, PIN, blocage, déblocage, changement de PIN |
 | `test_batch` | intérêts, frais, arrondis, dépassement, rejeu, période interrompue |
-| `test_releve` | périodes, soldes, cohérence, droits, bout en bout |
-| `test_menu.sh` | scénario complet par saisies redirigées (client, admin, blocage, batch) |
+| `test_releve` | périodes, soldes, cohérence, droits, export CSV, bout en bout |
+| `test_trx` | numérotation de l'historique |
+| `test_menu.sh` | scénario complet par saisies redirigées (client, admin, blocage, batch, connexion par nom) |
+| `test_demo.sh` | le jeu de démonstration produit les soldes, alertes et relevés annoncés |
 
 ## Limites connues
 
