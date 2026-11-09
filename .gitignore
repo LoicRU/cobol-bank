@@ -7,6 +7,7 @@ data/*.dat
 data/*.idx
 tests/*.dat
 tests/*.idx
+tests/*.txt
 
 # relevés générés
 reports/*
