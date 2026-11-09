@@ -7,8 +7,12 @@ data/*.dat
 data/*.idx
 tests/*.dat
 tests/*.idx
-tests/*.txt
 
 # relevés générés
 reports/*
 !reports/.gitkeep
+
+# demo data
+demo/
+tests/DEMO_TMP/
+tests/WEB_TMP/

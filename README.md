@@ -1,335 +1,114 @@
 # cobol-bank
 
-Mini core-banking en **GnuCOBOL** : fichiers indexés, menu console, authentification par PIN, comptes, dépôts / retraits / virements, historique, batch mensuel d'intérêts et de frais, détection de fraude basique et relevés de compte imprimables.
+**A mini core-banking system written in GnuCOBOL**: indexed files, console menus, PIN authentication, current and savings accounts, overdraft, scheduled transfers, monthly interest/fees/overdraft-interest batch, basic fraud detection, printable statements, and a web UI backed by the COBOL code.
 
-> Projet pédagogique. L'empreinte du PIN est calculée en COBOL pur (sel par client, 2000 tours de mélange arithmétique) : **ce n'est pas du SHA-256** et ne doit pas protéger de vrais secrets. Les fichiers de données ne sont pas chiffrés.
+[![CI](https://github.com/LoicRU/cobol-bank/actions/workflows/ci.yml/badge.svg)](https://github.com/LoicRU/cobol-bank/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![GnuCOBOL 3.1+](https://img.shields.io/badge/GnuCOBOL-3.1%2B-informational)
+![Python 3 (web server only)](https://img.shields.io/badge/Python-3-informational)
 
-## Fonctions
+**Language:** English · [Français](README.fr.md)
 
-- **Authentification** : identifiant + PIN (4 à 6 chiffres), blocage après 3 échecs, alertes de fraude (échecs rapprochés, blocage), déblocage par un administrateur.
-- **Comptes** : comptes courants (avec découvert autorisé optionnel) et comptes épargne, statuts actif / gelé / clos, plafond journalier par compte, modification par l'administrateur.
-- **Opérations** : dépôt, retrait, virement atomique ; chaque tentative (acceptée ou refusée, avec motif) est écrite dans l'historique.
-- **Fraude** : plafond journalier de sorties (refus) et montant anormal par rapport à la moyenne du compte (alerte), journal d'alertes consultable par l'administrateur.
-- **Batch mensuel** : intérêts (taux propre à l'épargne), frais de tenue et agios sur découvert (comptes courants seulement), rejouable sans doublon (une période déjà traitée est refusée).
-- **Inscription et ouverture de comptes en libre-service** : un visiteur crée son propre client (nom + PIN), puis chaque client s'ouvre jusqu'à 5 comptes (courant ou épargne), en console comme sur le web.
-- **Interface web** (client et administrateur) : inscription, ouverture de compte, consultation des comptes, dépôt, retrait, virement, historique et téléchargement des relevés (texte ou CSV) dans le navigateur ; l'administrateur y gère clients, comptes, alertes et batch. Un petit serveur Python appelle le COBOL.
-- **Virements programmés** : un client programme un virement unique ou mensuel (jusqu'à `MAX_PROGRAMMES_CLIENT` actifs) ; l'administrateur exécute les échéances du jour à la demande (console ou web), avec les mêmes règles que tout virement.
-- **Relevés** : fichier texte formaté ou export CSV sur une période, avec contrôle de cohérence (solde initial + crédits − débits = solde final).
+![Web UI, customer view](docs/img/web-client.png)
 
-## Installation
+> Educational project. The PIN hash is computed in pure COBOL (per-customer salt, 2000 rounds of arithmetic mixing): **it is not SHA-256** and must not protect real secrets. Data files are not encrypted.
 
-```
-sudo apt install gnucobol      # testé avec GnuCOBOL 3.1.2
-make                           # compile bin/banque
-make run                       # lance le programme
-make test                      # compile et lance toutes les suites de tests
-make web                       # lance l'interface web sur http://127.0.0.1:8080 (Python 3 requis)
-make demo                      # cree un jeu de donnees de demonstration dans demo/
-make run-demo                  # lance le programme sur ces donnees
-make web-demo                  # lance l'interface web sur ces donnees
-make clean                     # supprime exécutables et fichiers de test
-```
+## Why COBOL?
 
-## Premier lancement
+COBOL still runs a large share of the world's banking back-ends. This project rebuilds the core of such a system the way those systems are built: record layouts in copybooks, one program per responsibility, indexed files, a nightly/monthly batch, status codes returned by every module, and a transaction journal that lets any statement be audited. The web UI is deliberately thin: a small Python server validates input and calls the same COBOL programs as the console.
 
-Sans client, le programme crée l'administrateur : **identifiant 1**, avec le nom et le PIN que tu saisis. Pour se connecter, on saisit l'**identifiant** (numérique) ou le **nom** du client (sans tenir compte de la casse). Si deux clients portent le même nom, le programme demande l'identifiant. Un nom inconnu donne la même réponse qu'un mauvais PIN. Les fichiers sont créés dans `data/` et `reports/`.
-
-Parcours d'essai :
-
-1. Connexion `1` avec le PIN de l'administrateur.
-2. Menu admin `1` : créer un client (Alice, rôle `C`, PIN 4321) → identifiant 2.
-3. Menu admin `2` : ouvrir un compte pour le client 2 (type courant par défaut, plafond `0` = valeur par défaut, découvert `0` = aucun) → compte `1000000001`.
-4. Déconnexion `0`, reconnexion avec `2` / 4321, dépôt `2`, retrait `3`, virement `4`.
-5. Relevé `6` : dates de début et de fin au format `AAAAMMJJ`, fichier écrit dans `reports/`.
-
-> **Mise à jour depuis la V1.0** : le format des comptes, des clients et de l'historique a changé (type de compte, découvert, soldes signés, date d'inscription). Supprimer les anciens fichiers (`rm -f data/*.dat`) puis `make clean && make`.
-
-## Démo
-
-`make demo` crée `demo/` (jamais `data/`) en rejouant un scénario sur le vrai programme : clients, comptes, dépôts, retraits, virements, un retrait refusé, un plafond dépassé, un client bloqué et le batch mensuel. `make run-demo` lance ensuite le programme sur ces données.
-
-| Identifiant ou nom | PIN | Rôle |
-|---|---|---|
-| 1 Admin | 1234 | administrateur |
-| 2 Alice | 4321 | client, comptes courants 1000000001 et 1000000002, épargne 1000000005 |
-| 3 Bob | 5555 | client, compte 1000000003 (plafond 500.00, découvert autorisé 200.00, solde négatif après le batch) |
-| 4 Clara | 2468 | client **bloqué** (compte 1000000004) : à débloquer par l'admin |
-
-Le menu admin, option 4, montre les alertes `PLAFOND_JOUR`, `ECHECS_RAPIDES` et `PIN_BLOQUE`. Le relevé d'Alice est déjà dans `demo/reports/`.
-
-### Export CSV
-
-Au moment de demander un relevé, le menu propose le format : `1` texte (par défaut) ou `2` CSV. Le fichier `RELEVE_<compte>_<début>_<fin>.csv` utilise le séparateur `;` (s'ouvre directement dans Excel en français), des montants avec point décimal et du texte sans accents :
+## Quick start
 
 ```
-Titulaire;Alice
-Compte;1000000001
-Periode_debut;2026-11-09
-Periode_fin;2026-11-09
-Solde_initial;0.00
-date;heure;operation;compte_lie;debit;credit;solde
-2026-11-09;14:03;DEPOT;;;500.00;500.00
-2026-11-09;14:03;RETRAIT;;120.50;;379.50
-Solde_final;379.50
-Total_debits;120.50
-Total_credits;500.00
-Operations;2
-Verification;OK
+sudo apt install gnucobol      # tested with GnuCOBOL 3.1.2
+make demo                      # builds demo data (never touches data/)
+make web-demo                  # web UI on http://127.0.0.1:8080
+make run-demo                  # or the console program on the same data
 ```
 
-Un nom de titulaire qui commencerait par `=`, `+`, `-` ou `@` est préfixé d'une apostrophe pour ne pas être interprété comme une formule par un tableur.
+Demo logins (`make demo` prints them): `2` / `4321` (Alice, customer), `3` / `5555` (Bob, negative balance), `1` / `1234` (administrator).
 
-### Exemple de relevé
+Other targets: `make` (build), `make run`, `make web`, `make test`, `make clean`.
 
-```
-RELEVE DE COMPTE
-Titulaire : Alice
-Compte    : 1000000001
-Periode   : 2026-11-09 au 2026-11-09
-Edite le  : 2026-11-09
+## Features
 
-Solde initial :         0.00
+- **Authentication**: ID or name + PIN (4 to 6 digits), lock after 3 failures, fraud alerts, unlock by an administrator.
+- **Accounts**: current accounts (optional overdraft) and savings accounts; active / frozen / closed status; per-account daily limit; self-service sign-up and account opening.
+- **Operations**: deposit, withdrawal, atomic transfer. Every attempt, accepted or refused, is journaled with its reason.
+- **Scheduled transfers**: one-off or monthly; executed on demand by the administrator through the normal transfer path (all rules apply); refused-for-funds transfers are retried; no duplicates on replay.
+- **Monthly batch**: savings interest, account fees, overdraft interest (agios); replayable without duplicates (a processed period is refused).
+- **Fraud detection**: daily outgoing limit (refusal), abnormal amount vs. account average (alert), repeated PIN failures (alert), alert journal for the administrator.
+- **Statements**: formatted text or CSV over a period, with a consistency check (opening balance + credits − debits = closing balance).
+- **Web UI** (customer and administrator): sign-up, accounts, operations, scheduled transfers, statement download, and for the administrator customers, accounts, alerts, batch and due transfers. The UI text is in French.
 
-Date        Heure  Operation         Compte lie  Debit         Credit        Solde
-----------------------------------------------------------------------------------------------------
-2026-11-09  14:03  DEPOT                                             500.00        500.00
-2026-11-09  14:03  RETRAIT                             120.50                      379.50
-----------------------------------------------------------------------------------------------------
-Solde final :       379.50
-Total debits  :       120.50
-Total credits :       500.00
-Operations    :       2
-Verification : OK
-```
+## Screenshots
 
-## Exemple de session
-
-Session réelle sur les données de `make demo` (Alice, identifiant 2, PIN 4321, saisi sans affichage). Les lignes après `Choix :`, `Montant :` et les autres invites sont les saisies. Le menu client n'est reproduit qu'une fois.
-
-```
-=== COBOL-BANK ===
-1. Connexion
-2. Creer mon compte client
-0. Quitter
-Choix : 1
-Identifiant ou nom : 2
-PIN : 
-Bonjour Alice
-
---- Menu client ---
-1. Mes comptes
-2. Depot
-3. Retrait
-4. Virement
-5. Historique d'un compte
-6. Releve de compte
-7. Changer mon PIN
-8. Ouvrir un compte
-0. Deconnexion
-Choix : 1
-Compte 1000000001  solde       1078.85  statut A  courant
-Compte 1000000002  solde        348.44  statut A  courant
-Compte 1000000005  solde       1002.50  statut A  epargne
-
-[menu client]
-Choix : 2
-Numero de compte : 1000000001
-Montant : 100
-Nouveau solde :       1178.85
-Operation effectuee.
-
-[menu client]
-Choix : 3
-Numero de compte : 1000000001
-Montant : 20000
-Solde insuffisant.
-
-[menu client]
-Choix : 3
-Numero de compte : 1000000001
-Montant : 50
-Nouveau solde :       1128.85
-Operation effectuee.
-
-[menu client]
-Choix : 4
-Numero de compte : 1000000002
-Compte destinataire : 1000000001
-Montant : 50
-Nouveau solde :        298.44
-Operation effectuee.
-
-[menu client]
-Choix : 5
-Numero de compte : 1000000002
-2026-11-09 15:23 D       300.00 A                              
-2026-11-09 15:23 V        50.00 A                              
-2026-11-09 15:23 I         0.44 A INTERETS 202611              
-2026-11-09 15:23 F         2.00 A FRAIS DE TENUE 202611        
-2026-11-09 15:23 V        50.00 A                              
-
-[menu client]
-Choix : 0
-Deconnecte.
-
-=== COBOL-BANK ===
-1. Connexion
-2. Creer mon compte client
-0. Quitter
-Choix : 0
-Au revoir.
-```
-
-Le retrait de 20000 est refusé (solde insuffisant) et la dernière ligne de l'historique est le virement émis pendant la session. Les types sont D dépôt, R retrait, V virement, I intérêts, F frais ; `A` signale une opération acceptée, `R` une opération refusée.
-
-## Interface web
-
-```
-make web                 # compile bin/api puis lance le serveur sur le port 8080
-python3 web/server.py 9000   # autre port
-```
-
-Ouvrir `http://127.0.0.1:8080`, créer son compte client (« Créer mon compte client » : nom et PIN, l'identifiant attribué s'affiche) puis se connecter avec l'identifiant numérique et le PIN. Un **client** arrive sur ses comptes ; un **administrateur** arrive sur son tableau de bord (voir plus bas). Pour essayer sur les données de démonstration :
-
-```
-make web-demo                 # recrée demo/ à chaque lancement, puis lance le site dessus
-sh tests/demo.sh web 9000     # même chose sur un autre port
-```
-
-En mode démo, la page de connexion affiche un encart « Comptes de démonstration » (Alice, Bob, Clara, avec identifiants et PIN) : un clic sur « Utiliser » remplit le formulaire. L'encart n'apparaît jamais sans `--demo`.
-
-Fonctionnement : `web/index.html` appelle `POST /api/<commande>` sur `web/server.py`, qui transmet une ligne (`commande id pin paramètres`) à `bin/api` (module `API.cob`) par l'entrée standard et renvoie son JSON. Le serveur ne garde aucun état : l'identifiant et le PIN accompagnent chaque requête et sont vérifiés par `AUTH` à chaque fois, donc le blocage après échecs de PIN, le plafond journalier, le découvert et les règles de l'épargne s'appliquent exactement comme en console. Le serveur n'écoute que sur `127.0.0.1`, valide strictement les champs (chiffres seulement) et ne met ni PIN ni corps de requête dans ses logs ; les appels au COBOL sont sérialisés.
-
-> Usage **local uniquement** : pas de HTTPS ni de session, le PIN circule en clair entre le navigateur et le serveur. Ne pas exposer ce serveur sur un réseau.
-
-Commandes client de `bin/api` : `inscription`, `connexion`, `comptes`, `ouvrir`, `depot`, `retrait`, `virement`, `historique` (200 dernières opérations), `programmer` (source, destination, montant, date AAAAMMJJ, fréquence U ou M), `programmes`, `annuler` (numéro de programme), `releve` (compte, dates AAAAMMJJ, format T ou C : le serveur lit le fichier écrit par `RELEVE` et le renvoie au navigateur, qui le télécharge). Commandes administrateur (préfixe `admin-`) : `admin-connexion`, `admin-clients`, `admin-comptes`, `admin-alertes` (200 dernières), `admin-bloquer`, `admin-debloquer`, `admin-modifier` (plafond, découvert, statut), `admin-batch` (période AAAAMM, mois courant par défaut), `admin-programmes` (tous les programmes), `admin-echeances` (exécute les échéances du jour ; renvoie le nombre de virements faits et refusés). Codes ajoutés : 74 (compte d'un autre client), 77 (commande inconnue), 78 (rôle non autorisé : commande client refusée à un administrateur et inversement), 79 (paramètre invalide).
-
-### Espace administrateur (web)
-
-Se connecter avec un compte administrateur (identifiant 1 sur la démo, PIN 1234) ouvre le tableau de bord : liste des clients avec blocage / déblocage (un administrateur ne peut pas se bloquer lui-même), liste de tous les comptes avec modification du plafond, du découvert (courant seulement) et du statut, alertes de fraude, et traitement mensuel. Le traitement mensuel demande une seconde validation (« Confirmer le lancement ») et une période ne se traite qu'une fois (code 71). Le serveur reste sur `127.0.0.1` et le rôle est revérifié par le COBOL à chaque requête : il n'y a ni session ni cookie, donc rien à voler ni à falsifier côté navigateur.
-
-## Menus
-
-| Menu client | Menu administrateur |
+| Customer | Administrator |
 |---|---|
-| 1 Mes comptes | 1 Créer un client |
-| 2 Dépôt | 2 Ouvrir un compte |
-| 3 Retrait | 3 Débloquer un client |
-| 4 Virement | 4 Consulter les alertes |
-| 5 Historique d'un compte | 5 Traitement mensuel |
-| 6 Relevé de compte | 6 Relevé d'un compte |
-| 7 Changer mon PIN | 7 Changer mon PIN |
-| 8 Ouvrir un compte | 8 Modifier un compte |
-| 9 Virements programmés | 9 Virements programmés |
-| 0 Déconnexion | 0 Déconnexion |
-
-Le menu de départ propose aussi `2 Créer mon compte client` (inscription libre).
-
-### Inscription et ouverture en libre-service
-
-- **Inscription** (`AUTH`, action `N`) : le nom contient des lettres (accents compris), chiffres, espaces, tirets ou apostrophes, 30 caractères au plus (sinon code 84) ; le PIN fait 4 à 6 chiffres (83). L'identifiant est attribué par le programme et le rôle est **toujours client**. Au-delà de `MAX_INSCRIPTIONS_HEURE` par heure : refus (85) et alerte `INSCRIPTIONS` visible dans le menu admin.
-- **Ouverture de compte** (`COMPTE`, action `N`) : le client choisit courant ou épargne (87 si autre chose) ; le compte est créé à solde 0, sans découvert, avec le plafond par défaut ; au-delà de `MAX_COMPTES_CLIENT` comptes : refus (88). L'ouverture est écrite dans l'historique (type `O`, « OUVERTURE DE COMPTE »). L'administrateur ajuste ensuite plafond et découvert (menu admin 8).
-- Il n'y a **aucune vérification d'identité** : n'importe qui peut s'inscrire. Acceptable pour un projet pédagogique local, pas pour un vrai service.
-
-### Comptes courants et épargne
-
-| | Courant | Épargne |
-|---|---|---|
-| Solde minimal | `−découvert autorisé` (0 par défaut) | 0 |
-| Dépôt, virement reçu | oui | oui |
-| Retrait | oui (jusqu'au découvert) | **non** (code 90) |
-| Virement émis | oui (jusqu'au découvert) | seulement vers un **courant du même client** (sinon code 90) |
-| Intérêts mensuels | `TAUX_ANNUEL_PCT`, sur solde positif | `TAUX_EPARGNE_PCT`, sur solde positif |
-| Frais de tenue | oui, tant que `solde − frais ≥ −découvert` | aucun |
-| Agios mensuels | `TAUX_AGIOS_PCT`, sur solde négatif | aucun |
-
-Le découvert est un plafond de solde négatif. Chaque mois, le batch prélève des agios sur un compte courant à solde négatif : |solde d'ouverture| × `TAUX_AGIOS_PCT` / 12, arrondis au centime (ligne de type `A`, « AGIOS » sur les relevés). Ils sont prélevés même si le solde passe sous le découvert autorisé, contrairement aux frais de tenue. Exemple : −100,00 donne 1,00 d'agios à 12 %. Les soldes négatifs apparaissent avec un signe `-` dans les menus, l'historique et les relevés. Le menu admin `8` modifie le plafond journalier, le découvert (courant seulement) et le statut (actif, gelé, clos) d'un compte ; une saisie vide laisse la valeur actuelle.
-
-Un client n'accède qu'à ses propres comptes (code 74 sinon). Le rôle administrateur est vérifié avant chaque action réservée.
+| ![Customer](docs/img/web-client.png) | ![Administrator](docs/img/web-admin.png) |
 
 ## Architecture
 
 ```
-src/          programme principal, modules et API.cob (interface web)
-web/          serveur Python et page HTML
-copybooks/    structures d'enregistrements (COMPTE, CLIENT, TRX, ALERTE, BATCH, RELEVE, PARAMS, PROGRAMME)
-config/       parametres.cfg
-data/         fichiers de données (ignorés par Git)
-reports/      relevés et rapports générés (ignorés par Git)
-tests/        suites de tests
+console (BANQUE)            web browser
+      |                         |
+      |                    web/server.py   strict validation, one COBOL call per request
+      |                         |
+      |                    bin/api (API)   one command in, one JSON line out
+      +-----------+-------------+
+                  |
+   AUTH  COMPTE  TRX  FRAUDE  RELEVE  BATCH-INT  PROG  PARAM
+                  |
+     indexed / sequential files  (CLIENTS, COMPTES, TRANSACTIONS, ALERTES, BATCH, PROGRAMMES)
 ```
 
-| Module | Rôle | Codes de retour principaux |
+| Module | Role | Status codes |
 |---|---|---|
-| `BANQUE` | connexion, menus, saisies | — |
-| `AUTH` | clients, inscription libre, PIN, blocage | 00, 22, 23, 81 (identifiant ou PIN faux), 82 (bloqué), 83 (PIN invalide), 84 (nom invalide), 85 (trop d'inscriptions) |
-| `COMPTE` | comptes, dépôt, retrait, virement | 00, 22, 23, 87, 88, 90 (interdit sur épargne), 91 à 96, 98 |
-| `TRX` | historique des transactions (ajout seul) | 00 |
-| `FRAUDE` | plafond journalier, montant anormal, alertes d'échecs de PIN | 00, 96 (plafond), 97 (alerte seule) |
-| `RELEVE` | relevé de compte (texte ou CSV) sur une période | 00, 23, 73, 74, 75 (incohérent), 76 (format inconnu) |
-| `BATCH-INT` | intérêts et frais mensuels | 00, 71 (déjà traitée), 72 (interrompue), 73 |
-| `API` | une commande client ou administrateur en JSON pour l'interface web (utilise AUTH, COMPTE, BATCH-INT, RELEVE) | 00 et codes d'AUTH / COMPTE, 74, 77, 78, 79 |
-| `PARAM` | lecture et validation de la configuration | 00, 61, 62, 63 |
+| `BANQUE` | console menus (customer and administrator) | n/a |
+| `API` | one customer or admin command as JSON for the web UI | codes of AUTH / COMPTE / PROG, 74, 77, 78, 79 |
+| `AUTH` | login, PIN hash and change, lock, customer creation, sign-up | 81–85 |
+| `COMPTE` | account lifecycle, deposit, withdrawal, transfer, limits | 00, 22, 23, 87, 88, 90–96, 98, 99 |
+| `TRX` | transaction journal | 00 |
+| `FRAUDE` | alert rules and journal | 00 |
+| `RELEVE` | text/CSV statement with consistency check | 73–76 |
+| `BATCH-INT` | monthly interest, fees, overdraft interest | 71–73 |
+| `PROG` | scheduled transfers (create, list, cancel, execute due) | 10, 51–56 + COMPTE codes |
+| `PARAM` | reads `config/parametres.cfg` | 61–63 |
 
-Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexés ; `TRANSACTIONS.dat` et `ALERTES.dat` sont des journaux en ajout seul.
-
-### Règles de conception
-
-- Montants en virgule fixe (`PIC S9(9)V99`), jamais de flottants.
-- Invariant : aucun solde en dessous de `−découvert autorisé` du compte (0 pour l'épargne).
-- Toute opération est journalisée, acceptée ou refusée, avec son motif ; le contrôle de fraude passe en dernier.
-- Le virement est atomique : les deux comptes sont validés avant d'écrire, et la source est restaurée si l'écriture de la destination échoue.
-- L'historique garde le solde après chaque opération, ce qui permet de vérifier un relevé.
-- Un identifiant inconnu et un mauvais PIN renvoient le même code (81).
-- Une erreur d'entrée/sortie dans le menu affiche un message clair et arrête le programme (code retour 1).
-- Une configuration invalide est refusée : le programme ne démarre pas, et les modules n'agissent pas.
+Design rules: record layouts live in `copybooks/`; every module returns a status code instead of aborting; amounts are fixed-point (`PIC 9(9)V99`), never floating point; the web server never reaches the data files directly and never logs a PIN; the role is re-checked by COBOL on every request.
 
 ## Configuration
 
-`config/parametres.cfg` (format `CLE=valeur`, `#` pour les commentaires). Une clé absente garde sa valeur par défaut.
+`config/parametres.cfg` (`KEY=value`, missing keys use defaults):
 
-| Clé | Défaut | Rôle |
+| Key | Default | Meaning |
 |---|---|---|
-| `PLAFOND_DEFAUT` | 1000.00 | plafond journalier des comptes sans plafond propre |
-| `FACTEUR_ANOMALIE` | 5 | alerte si montant > facteur × moyenne du compte |
-| `MIN_HISTORIQUE` | 3 | opérations minimales avant d'appliquer cette règle |
-| `TAUX_ANNUEL_PCT` | 1.50 | taux annuel des intérêts des comptes courants (%) |
-| `TAUX_EPARGNE_PCT` | 3.00 | taux annuel des intérêts des comptes épargne (%) |
-| `MAX_COMPTES_CLIENT` | 5 | comptes qu'un client peut ouvrir lui-même (l'administrateur n'est pas limité) |
-| `MAX_INSCRIPTIONS_HEURE` | 20 | inscriptions libres par heure ; au-delà, refus (code 85) et alerte `INSCRIPTIONS` |
-| `FRAIS_TENUE` | 2.00 | frais mensuels de tenue de compte |
-| `TAUX_AGIOS_PCT` | 12.00 | taux annuel des agios sur solde négatif (%) |
-| `MAX_PROGRAMMES_CLIENT` | 10 | virements programmés actifs par client (1 à 99) |
-| `MAX_ECHECS_PIN` | 3 | échecs de PIN avant blocage |
-| `ALERTE_ECHECS` | 2 | échecs de PIN consécutifs déclenchant l'alerte `ECHECS_RAPIDES` (sans blocage) |
-| `FENETRE_ECHECS_SEC` | 300 | durée (secondes) dans laquelle ces échecs doivent survenir |
+| `PLAFOND_DEFAUT` | 1000.00 | default daily limit for new accounts |
+| `TAUX_ANNUEL_PCT` / `TAUX_EPARGNE_PCT` | 1.50 / 3.00 | yearly interest rate, current / savings (%) |
+| `FACTEUR_ANOMALIE` / `MIN_HISTORIQUE` | 5 / 3 | abnormal-amount alert: multiple of the account average, minimum history |
+| `MAX_COMPTES_CLIENT` | 5 | accounts a customer may open (administrator unlimited) |
+| `MAX_PROGRAMMES_CLIENT` | 10 | active scheduled transfers per customer |
+| `MAX_INSCRIPTIONS_HEURE` | 20 | sign-ups per hour (above: refusal and alert) |
+| `FRAIS_TENUE` | 2.00 | monthly account fee |
+| `TAUX_AGIOS_PCT` | 12.00 | yearly overdraft interest rate (%) |
+| `MAX_ECHECS_PIN` | 3 | PIN failures before lock |
 
-Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIENTS_FILE`, `COMPTES_FILE`, `TRX_FILE`, `ALERTES_FILE`, `BATCH_FILE`, `BATCH_REPORT_DIR`, `RELEVE_DIR`, `PROGRAMMES_FILE`.
+Environment variables (mainly for tests): `PARAMS_FILE`, `CLIENTS_FILE`, `COMPTES_FILE`, `TRX_FILE`, `ALERTES_FILE`, `BATCH_FILE`, `BATCH_REPORT_DIR`, `RELEVE_DIR`, `PROGRAMMES_FILE`.
 
 ## Tests
 
-`make test` lance dix suites, chacune sur des fichiers temporaires dans `tests/` (jamais `data/` ni `reports/`) :
+`make test` builds and runs 11 suites, each ending with `TOUS LES TESTS PASSENT`: unit tests per module (`test_trx`, `test_param`, `test_compte`, `test_auth`, `test_batch`, `test_releve`, `test_epargne`, `test_prog`) and end-to-end shell suites for the console menus (`test_menu.sh`), the demo data (`test_demo.sh`) and the JSON API and HTTP server, including role checks, parameter injection attempts and PIN-free logs (`test_web.sh`). They run in CI on every push.
 
-| Suite | Couvre |
-|---|---|
-| `test_param` | lecture, fichiers invalides, effet d'une valeur modifiée sur AUTH, FRAUDE et BATCH-INT |
-| `test_compte` | création, dépôt, retrait, virement, cas de refus, plafond et anomalie, découvert et règles de l'épargne, ouverture de compte et limite par client |
-| `test_auth` | création, PIN, blocage, déblocage, changement de PIN, inscription libre (validations, limite horaire, alerte) |
-| `test_batch` | intérêts, frais, arrondis, dépassement, rejeu, période interrompue |
-| `test_releve` | périodes, soldes (y compris négatifs), cohérence, droits, export CSV, bout en bout |
-| `test_prog` | virements programmés : création et refus (51 à 56), exécution unique et mensuelle, rattrapage, refus réessayés, annulation, rejeu sans doublon |
-| `test_epargne` | batch : intérêts d'épargne, pas de frais sur l'épargne, frais limités par le découvert, agios sur soldes négatifs |
-| `test_trx` | numérotation de l'historique |
-| `test_menu.sh` | scénario complet par saisies redirigées (client, admin, blocage, batch, connexion par nom) |
-| `test_web.sh` | `bin/api` et serveur HTTP : inscription, ouverture de compte, connexion, comptes, opérations, relevés (propriétaire, périodes, injections), commandes administrateur (rôles, blocage, modification, batch), refus, injections de paramètres, PIN absent des logs |
-| `test_demo.sh` | le jeu de démonstration produit les soldes, alertes et relevés annoncés |
+## Known limits
 
-## Limites connues
+- Educational PIN hashing, unencrypted files, no HTTPS or sessions (the web server listens on 127.0.0.1 only).
+- Single currency; date and time come from the system.
+- Overdraft interest uses one rate on the opening balance of the period (not daily).
+- Scheduled transfers: one-off or monthly only; due transfers run only when an administrator triggers them (no daemon); administrator cancellation is console-only.
+- Statements are text or CSV; no PDF export.
 
-- Un seul utilisateur à la fois : pas de gestion de concurrence entre plusieurs processus.
-- PIN pédagogique (voir l'avertissement en tête), fichiers non chiffrés.
-- Pas de devise ni de fuseau : une seule monnaie, date et heure du système.
-- Inscription libre sans vérification d'identité (limitée seulement par `MAX_INSCRIPTIONS_HEURE`) ; un nouveau client peut porter le même nom qu'un autre.
-- Agios : un seul taux, calculé sur le solde d'ouverture de la période (pas de calcul au jour le jour).
-- Le relevé est un fichier texte ; il n'y a pas d'export PDF.
-- Virements programmés : fréquence unique ou mensuelle seulement ; les échéances ne sont exécutées que sur demande de l'administrateur (pas de démon) ; un refus pour solde ou plafond (93, 96) est réessayé à l'exécution suivante, tout autre refus passe le programme en erreur ; l'annulation par l'administrateur n'existe qu'en console.
+The full documentation (menus, session examples, statement format, web API commands) is in [README.fr.md](README.fr.md), and the requirements specification in [CAHIER_DES_CHARGES.md](CAHIER_DES_CHARGES.md), both in French.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under the [MIT License](LICENSE).

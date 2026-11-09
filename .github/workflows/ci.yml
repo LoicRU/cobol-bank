@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GnuCOBOL
+        run: sudo apt-get update && sudo apt-get install -y gnucobol
+      - name: Show versions
+        run: cobc --version | head -1 && python3 --version
+      - name: Build
+        run: make all
+      - name: Test
+        run: make test
