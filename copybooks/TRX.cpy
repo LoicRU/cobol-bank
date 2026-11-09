@@ -3,7 +3,7 @@
 *> TRX-STATUT : A accepte, R refuse
 *> Depot : source = 0. Retrait : destination = 0.
 *> TRX-SOLDE-SRC / TRX-SOLDE-DST : solde du compte source / destination
-*> juste apres l'operation (0 si le compte n'est pas concerne ou introuvable).
+*> juste apres l'operation (peut etre negatif si decouvert ; 0 si le compte n'est pas concerne ou introuvable).
 *> Pour une operation refusee, c'est le solde actuel, inchange.
 01 TRX-REC.
    05 TRX-ID           PIC 9(10).
@@ -15,5 +15,5 @@
    05 TRX-MONTANT      PIC 9(9)V99.
    05 TRX-STATUT       PIC X.
    05 TRX-MOTIF        PIC X(30).
-   05 TRX-SOLDE-SRC    PIC 9(9)V99.
-   05 TRX-SOLDE-DST    PIC 9(9)V99.
+   05 TRX-SOLDE-SRC    PIC S9(9)V99.
+   05 TRX-SOLDE-DST    PIC S9(9)V99.

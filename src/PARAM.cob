@@ -20,6 +20,7 @@
 *>   MAX_ECHECS_PIN   3        entier 1 a 99
 *>   ALERTE_ECHECS    2        entier 2 a 99
 *>   FENETRE_ECHECS_SEC 300    entier 1 a 86400
+*>   TAUX_EPARGNE_PCT 3.00     0 a 100 (2 decimales)
 *> Fichier : variable d'environnement PARAMS_FILE, sinon
 *> config/parametres.cfg
 IDENTIFICATION DIVISION.
@@ -94,7 +95,8 @@ VALEURS-PAR-DEFAUT.
     MOVE 2.00 TO LK-PRM-FRAIS-TENUE
     MOVE 3 TO LK-PRM-MAX-ECHECS
     MOVE 2 TO LK-PRM-ALERTE-ECHECS
-    MOVE 300 TO LK-PRM-FENETRE-SEC.
+    MOVE 300 TO LK-PRM-FENETRE-SEC
+    MOVE 0.0300 TO LK-PRM-TAUX-EPARGNE.
 
 *> Ignore lignes vides et commentaires ; sinon CLE=valeur
 TRAITER-LIGNE.
@@ -133,6 +135,10 @@ APPLIQUER-CLE.
             MOVE 2 TO WS-DEC-MAX
             MOVE 0 TO WS-MIN-V
             MOVE 100 TO WS-MAX-V
+        WHEN "TAUX_EPARGNE_PCT"
+            MOVE 2 TO WS-DEC-MAX
+            MOVE 0 TO WS-MIN-V
+            MOVE 100 TO WS-MAX-V
         WHEN "FRAIS_TENUE"
             MOVE 2 TO WS-DEC-MAX
             MOVE 0 TO WS-MIN-V
@@ -161,6 +167,8 @@ APPLIQUER-CLE.
                     MOVE WS-NUM TO LK-PRM-MIN-HISTORIQUE
                 WHEN "TAUX_ANNUEL_PCT"
                     COMPUTE LK-PRM-TAUX-ANNUEL = WS-NUM / 100
+                WHEN "TAUX_EPARGNE_PCT"
+                    COMPUTE LK-PRM-TAUX-EPARGNE = WS-NUM / 100
                 WHEN "FRAIS_TENUE"
                     MOVE WS-NUM TO LK-PRM-FRAIS-TENUE
                 WHEN "MAX_ECHECS_PIN"

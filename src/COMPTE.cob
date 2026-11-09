@@ -11,7 +11,10 @@
 *>     00 ok                      22 cle deja existante
 *>     23 compte introuvable      99 action inconnue
 *>     91 montant invalide (0)    92 compte non actif
-*>     93 solde insuffisant       94 depassement de capacite du solde
+*>     93 solde insuffisant (solde - montant < -decouvert autorise)
+*>     94 depassement de capacite du solde
+*>     90 operation interdite sur un compte epargne (retrait en especes,
+*>        virement vers un compte qui n'est pas un courant du meme client)
 *>     95 virement vers le meme compte
 *>     96 plafond journalier depasse (controle FRAUDE, retrait et virement)
 *>     98 operation faite mais ligne d'historique non ecrite
@@ -46,6 +49,7 @@ WORKING-STORAGE SECTION.
 01 WS-LU          PIC X.
 01 WS-LU-DST      PIC X.
 01 WS-DST-AVANT   PIC S9(9)V99.
+01 WS-APRES       PIC S9(11)V99.
 01 WS-TRX-STATUS  PIC XX.
 01 WS-FRD-ACTION  PIC X VALUE "C".
 01 WS-FRD-CPT     PIC 9(10).
@@ -148,10 +152,19 @@ OPERATION.
         WHEN NOT CPT-ACTIF
             MOVE "92" TO LK-STATUS
             MOVE "COMPTE NON ACTIF" TO WS-MOTIF
-        WHEN LK-ACTION = "R" AND CPT-SOLDE < LK-MONTANT
+        WHEN LK-ACTION = "R" AND CPT-EPARGNE
+            MOVE "90" TO LK-STATUS
+            MOVE "RETRAIT INTERDIT EPARGNE" TO WS-MOTIF
+    END-EVALUATE
+
+    *> solde apres retrait >= -decouvert autorise (0 si aucun decouvert)
+    IF LK-STATUS = "00" AND LK-ACTION = "R"
+        COMPUTE WS-APRES = CPT-SOLDE - LK-MONTANT
+        IF WS-APRES < 0 - CPT-DECOUVERT
             MOVE "93" TO LK-STATUS
             MOVE "SOLDE INSUFFISANT" TO WS-MOTIF
-    END-EVALUATE
+        END-IF
+    END-IF
 
     *> un retrait est une sortie d'argent : controle de fraude en dernier
     IF LK-STATUS = "00" AND LK-ACTION = "R"
@@ -224,10 +237,20 @@ VIREMENT.
         WHEN NOT SRC-ACTIF OR NOT DST-ACTIF
             MOVE "92" TO LK-STATUS
             MOVE "COMPTE NON ACTIF" TO WS-MOTIF
-        WHEN SRC-SOLDE < LK-MONTANT
+        WHEN SRC-EPARGNE AND (DST-EPARGNE
+                              OR DST-ID-CLIENT NOT = SRC-ID-CLIENT)
+            MOVE "90" TO LK-STATUS
+            MOVE "VIREMENT EPARGNE INTERDIT" TO WS-MOTIF
+    END-EVALUATE
+
+    *> solde apres virement >= -decouvert autorise de la source
+    IF LK-STATUS = "00"
+        COMPUTE WS-APRES = SRC-SOLDE - LK-MONTANT
+        IF WS-APRES < 0 - SRC-DECOUVERT
             MOVE "93" TO LK-STATUS
             MOVE "SOLDE INSUFFISANT" TO WS-MOTIF
-    END-EVALUATE
+        END-IF
+    END-IF
 
     IF LK-STATUS = "00"
         MOVE SRC-REC TO ORG-REC

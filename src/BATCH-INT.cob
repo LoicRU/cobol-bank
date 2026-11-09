@@ -64,6 +64,9 @@ WORKING-STORAGE SECTION.
 COPY "PARAMS.cpy".
 01 WS-PRM-STATUS       PIC XX.
 01 WS-TAUX             PIC 9V9999.
+01 WS-TAUX-COURANT     PIC 9V9999.
+01 WS-TAUX-EPARGNE     PIC 9V9999.
+01 WS-APRES-FRAIS      PIC S9(10)V99.
 01 WS-FRAIS            PIC 9(5)V99.
 01 WS-SOLDE-MAX        PIC 9(9)V99 VALUE 999999999.99.
 01 WS-PERIODE          PIC 9(6).
@@ -111,7 +114,9 @@ MAIN-PARA.
         MOVE WS-PRM-STATUS TO LK-STATUS
         GOBACK
     END-IF
-    MOVE PRM-TAUX-ANNUEL TO WS-TAUX
+    MOVE PRM-TAUX-ANNUEL TO WS-TAUX-COURANT
+    MOVE PRM-TAUX-EPARGNE TO WS-TAUX-EPARGNE
+    MOVE WS-TAUX-COURANT TO WS-TAUX
     MOVE PRM-FRAIS-TENUE TO WS-FRAIS
 
     PERFORM RESERVER-PERIODE
@@ -206,8 +211,18 @@ TRAITER-UN-COMPTE.
     IF CPT-ACTIF
         ADD 1 TO RES-NB-ACTIFS
         MOVE "N" TO WS-MODIFIE
+        *> taux selon le type de compte ; l'epargne ne paie pas de frais
+        IF CPT-EPARGNE
+            MOVE WS-TAUX-EPARGNE TO WS-TAUX
+        ELSE
+            MOVE WS-TAUX-COURANT TO WS-TAUX
+        END-IF
         PERFORM CALCULER-INTERETS
-        PERFORM CALCULER-FRAIS
+        IF CPT-EPARGNE
+            MOVE "N" TO WS-FRAIS-STATUT
+        ELSE
+            PERFORM CALCULER-FRAIS
+        END-IF
         IF WS-MODIFIE = "O"
             REWRITE COMPTE-REC
             IF WS-FS NOT = "00"
@@ -247,9 +262,12 @@ CALCULER-INTERETS.
     *> solde apres les interets (inchange s'il n'y en a pas / refus)
     MOVE CPT-SOLDE TO WS-SOLDE-APRES-INT.
 
-*> WS-FRAIS-STATUT : A preleves, R refuses (solde insuffisant)
+*> WS-FRAIS-STATUT : A preleves, R refuses (solde insuffisant), N aucun
+*> (compte epargne). Les frais peuvent faire descendre jusqu'au decouvert
+*> autorise (solde - frais >= -decouvert) mais pas en dessous.
 CALCULER-FRAIS.
-    IF CPT-SOLDE >= WS-FRAIS
+    COMPUTE WS-APRES-FRAIS = CPT-SOLDE - WS-FRAIS
+    IF WS-APRES-FRAIS >= 0 - CPT-DECOUVERT
         SUBTRACT WS-FRAIS FROM CPT-SOLDE
         MOVE "A" TO WS-FRAIS-STATUT
         MOVE "O" TO WS-MODIFIE
@@ -283,6 +301,9 @@ JOURNALISER-INTERETS.
     END-IF.
 
 JOURNALISER-FRAIS.
+    IF WS-FRAIS-STATUT = "N"
+        EXIT PARAGRAPH
+    END-IF
     INITIALIZE TRX-REC
     MOVE "F" TO TRX-TYPE
     MOVE CPT-NUM TO TRX-CPT-SRC
@@ -346,7 +367,7 @@ ECRIRE-RAPPORT.
                INTO WS-LIGNE
         PERFORM ECRIRE-LIGNE
 
-        COMPUTE WS-TAUX-PCT = WS-TAUX * 100
+        COMPUTE WS-TAUX-PCT = WS-TAUX-COURANT * 100
         MOVE WS-TAUX-PCT TO WS-E-TAUX
         MOVE WS-FRAIS TO WS-E-MT
         MOVE SPACES TO WS-LIGNE
@@ -354,6 +375,15 @@ ECRIRE-RAPPORT.
                WS-E-TAUX DELIMITED BY SIZE
                " %   Frais mensuels : " DELIMITED BY SIZE
                WS-E-MT DELIMITED BY SIZE
+               INTO WS-LIGNE
+        PERFORM ECRIRE-LIGNE
+
+        COMPUTE WS-TAUX-PCT = WS-TAUX-EPARGNE * 100
+        MOVE WS-TAUX-PCT TO WS-E-TAUX
+        MOVE SPACES TO WS-LIGNE
+        STRING "Taux epargne : " DELIMITED BY SIZE
+               WS-E-TAUX DELIMITED BY SIZE
+               " %   (pas de frais)" DELIMITED BY SIZE
                INTO WS-LIGNE
         PERFORM ECRIRE-LIGNE
 
