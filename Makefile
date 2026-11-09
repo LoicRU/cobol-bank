@@ -14,10 +14,14 @@ bin/test_compte: tests/test_compte.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob
 bin/test_batch: tests/test_batch.cob src/BATCH-INT.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob copybooks/BATCH.cpy copybooks/COMPTE.cpy copybooks/TRX.cpy copybooks/ALERTE.cpy
 	$(COBC) -x $(FLAGS) -o $@ tests/test_batch.cob src/BATCH-INT.cob src/COMPTE.cob src/TRX.cob src/FRAUDE.cob
 
-test: bin/test_compte bin/test_auth bin/test_batch
+bin/test_releve: tests/test_releve.cob src/RELEVE.cob src/COMPTE.cob src/AUTH.cob src/TRX.cob src/FRAUDE.cob src/BATCH-INT.cob copybooks/RELEVE.cpy copybooks/COMPTE.cpy copybooks/CLIENT.cpy copybooks/TRX.cpy copybooks/BATCH.cpy copybooks/ALERTE.cpy
+	$(COBC) -x $(FLAGS) -o $@ tests/test_releve.cob src/RELEVE.cob src/COMPTE.cob src/AUTH.cob src/TRX.cob src/FRAUDE.cob src/BATCH-INT.cob
+
+test: bin/test_compte bin/test_auth bin/test_batch bin/test_releve
 	./bin/test_compte
 	./bin/test_auth
 	./bin/test_batch
+	./bin/test_releve
 
 clean:
-	rm -f bin/banque bin/test_compte bin/test_auth bin/test_batch tests/*.dat tests/*.txt tests/*.idx
+	rm -f bin/banque bin/test_compte bin/test_auth bin/test_batch bin/test_releve tests/*.dat tests/*.txt tests/*.idx
