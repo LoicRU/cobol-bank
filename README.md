@@ -25,7 +25,7 @@ make clean                     # supprime exécutables et fichiers de test
 
 ## Premier lancement
 
-Sans client, le programme crée l'administrateur : **identifiant 1**, avec le nom et le PIN que tu saisis. Pour se connecter, on saisit l'identifiant **numérique** (pas le nom). Les fichiers sont créés dans `data/` et `reports/`.
+Sans client, le programme crée l'administrateur : **identifiant 1**, avec le nom et le PIN que tu saisis. Pour se connecter, on saisit l'**identifiant** (numérique) ou le **nom** du client (sans tenir compte de la casse). Si deux clients portent le même nom, le programme demande l'identifiant. Un nom inconnu donne la même réponse qu'un mauvais PIN. Les fichiers sont créés dans `data/` et `reports/`.
 
 Parcours d'essai :
 

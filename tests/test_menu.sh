@@ -101,6 +101,19 @@ echo "MENU : fin de saisie sans plantage"
 printf '' | timeout 20 $BIN > $T/MENU_7.out 2>&1
 verifie "arret propre sur fin d'entree" $T/MENU_7.out "arret"
 
+echo "MENU : connexion par nom"
+printf '%s\n' 1 alice 4321 0 0 | $BIN > $T/MENU_9.out 2>&1
+verifie "nom en minuscules accepte" $T/MENU_9.out "Bonjour Alice"
+printf '%s\n' 1 Zorro 4321 0 | $BIN > $T/MENU_9.out 2>&1
+verifie "nom inconnu : message generique" $T/MENU_9.out "Identifiant ou PIN incorrect"
+absent "nom inconnu : pas de connexion" $T/MENU_9.out "Bonjour"
+printf '%s\n' 1 Bob 0000 1 Bob 0000 1 Bob 0000 1 Bob 5555 0 | $BIN > $T/MENU_9.out 2>&1
+verifie "client bloque par nom" $T/MENU_9.out "Client bloque"
+printf '%s\n' 1 1 1234 1 Alice C 1111 0 1 Alice 0 | $BIN > $T/MENU_9.out 2>&1
+verifie "homonymes : identifiant demande" $T/MENU_9.out "Plusieurs clients portent ce nom"
+printf '%s\n' 1 2 4321 0 0 | $BIN > $T/MENU_9.out 2>&1
+verifie "homonymes : connexion par identifiant" $T/MENU_9.out "Bonjour Alice"
+
 echo "MENU : erreur de fichier (arret propre)"
 printf '%s\n' 1 2 4321 1 0 0 | COMPTES_FILE=$T $BIN > $T/MENU_8.out 2>&1
 CODE=$?

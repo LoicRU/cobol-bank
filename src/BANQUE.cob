@@ -86,6 +86,9 @@ COPY "PARAMS.cpy".
 01 WS-MAX           PIC 9(10).
 01 WS-NB            PIC 9(5).
 01 WS-ID-CLIENT     PIC 9(6).
+01 WS-ID-TROUVE     PIC X.
+01 WS-NB-HOMONYMES  PIC 9(3).
+01 WS-NOM-CHERCHE   PIC X(40).
 01 WS-CPT-CIBLE     PIC 9(10).
 01 WS-PLAFOND       PIC 9(7)V99.
 *> affichage
@@ -185,15 +188,35 @@ PREMIER-LANCEMENT.
 *> ---------------------------------------------------------------
 CONNEXION.
     MOVE "N" TO WS-SESSION
-    DISPLAY "Identifiant : " WITH NO ADVANCING
+    DISPLAY "Identifiant ou nom : " WITH NO ADVANCING
+    MOVE SPACES TO WS-IN
     ACCEPT WS-IN
+    MOVE "N" TO WS-ID-TROUVE
     PERFORM CONVERTIR-NUM
-    IF WS-NUM-OK NOT = "O" OR WS-NUM-VAL > 999999
-        DISPLAY "Identifiant ou PIN incorrect"
-    ELSE
-        MOVE WS-NUM-VAL TO CLI-ID
+    IF WS-NUM-OK = "O" AND WS-NUM-VAL <= 999999
         MOVE WS-NUM-VAL TO WS-ID-CLIENT
-        PERFORM SAISIR-PIN
+        MOVE "O" TO WS-ID-TROUVE
+    ELSE
+        IF FUNCTION TRIM(WS-IN) NOT = SPACES
+            PERFORM CHERCHER-PAR-NOM
+            IF WS-NB-HOMONYMES > 1
+                DISPLAY "Plusieurs clients portent ce nom : "
+                        "saisir l'identifiant numerique."
+                EXIT PARAGRAPH
+            END-IF
+            IF WS-NB-HOMONYMES = 1
+                MOVE "O" TO WS-ID-TROUVE
+            END-IF
+        END-IF
+    END-IF
+    PERFORM SAISIR-PIN
+    IF WS-ID-TROUVE NOT = "O"
+        *> identifiant ou nom inconnu : meme reponse qu'un mauvais PIN
+        MOVE "81" TO WS-STATUS
+        PERFORM MESSAGE-STATUT
+    ELSE
+        INITIALIZE CLIENT-REC
+        MOVE WS-ID-CLIENT TO CLI-ID
         MOVE "L" TO WS-ACTION
         CALL "AUTH" USING WS-ACTION CLIENT-REC WS-PIN WS-NEW-PIN
                           WS-STATUS
@@ -206,6 +229,32 @@ CONNEXION.
         ELSE
             PERFORM MESSAGE-STATUT
         END-IF
+    END-IF.
+
+*> Cherche WS-IN parmi les noms de clients (sans tenir compte de la casse) :
+*> WS-NB-HOMONYMES = nombre de clients trouves, WS-ID-CLIENT = le premier
+CHERCHER-PAR-NOM.
+    MOVE 0 TO WS-NB-HOMONYMES
+    MOVE FUNCTION UPPER-CASE(FUNCTION TRIM(WS-IN)) TO WS-NOM-CHERCHE
+    OPEN INPUT F-CLI
+    PERFORM CONTROLER-OUVERTURE
+    IF WS-FS = "00"
+        MOVE "N" TO WS-FIN
+        PERFORM UNTIL WS-FIN = "O"
+            READ F-CLI
+                AT END
+                    MOVE "O" TO WS-FIN
+                NOT AT END
+                    IF FUNCTION UPPER-CASE(FUNCTION TRIM(FL-NOM))
+                       = WS-NOM-CHERCHE
+                        ADD 1 TO WS-NB-HOMONYMES
+                        IF WS-NB-HOMONYMES = 1
+                            MOVE FL-ID TO WS-ID-CLIENT
+                        END-IF
+                    END-IF
+            END-READ
+        END-PERFORM
+        CLOSE F-CLI
     END-IF.
 
 *> ---------------------------------------------------------------
