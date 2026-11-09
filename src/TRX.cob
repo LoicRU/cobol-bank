@@ -1,0 +1,90 @@
+*> TRX.cob - ajout d'une ligne a l'historique (fichier en ajout seul)
+*>
+*> Appel : CALL "TRX" USING LK-TRX-REC LK-STATUS
+*>   L'appelant renseigne type, comptes, montant, statut, motif.
+*>   TRX.cob attribue l'id (dernier id + 1), la date et l'heure,
+*>   puis renvoie l'enregistrement complete dans LK-TRX-REC.
+*>   LK-STATUS : FILE STATUS ("00" = ligne ecrite)
+*> Fichier : variable d'environnement TRX_FILE, sinon data/TRANSACTIONS.dat
+IDENTIFICATION DIVISION.
+PROGRAM-ID. TRX.
+
+ENVIRONMENT DIVISION.
+INPUT-OUTPUT SECTION.
+FILE-CONTROL.
+    SELECT F-TRX ASSIGN TO DYNAMIC WS-FILENAME
+        ORGANIZATION IS LINE SEQUENTIAL
+        FILE STATUS IS WS-FS.
+
+DATA DIVISION.
+FILE SECTION.
+FD F-TRX.
+COPY "TRX.cpy".
+
+WORKING-STORAGE SECTION.
+01 WS-FS          PIC XX.
+01 WS-FILENAME    PIC X(100).
+01 WS-DERNIER-ID  PIC 9(10) VALUE 0.
+01 WS-FIN         PIC X.
+01 WS-DATE        PIC 9(8).
+01 WS-TIME        PIC 9(8).
+
+LINKAGE SECTION.
+COPY "TRX.cpy" REPLACING LEADING ==TRX-== BY ==LK-TRX-==.
+01 LK-STATUS      PIC XX.
+
+PROCEDURE DIVISION USING LK-TRX-REC LK-STATUS.
+MAIN-PARA.
+    MOVE "data/TRANSACTIONS.dat" TO WS-FILENAME
+    ACCEPT WS-FILENAME FROM ENVIRONMENT "TRX_FILE"
+        ON EXCEPTION MOVE "data/TRANSACTIONS.dat" TO WS-FILENAME
+    END-ACCEPT
+
+    PERFORM TROUVER-DERNIER-ID
+    IF LK-STATUS NOT = "00"
+        GOBACK
+    END-IF
+
+    MOVE LK-TRX-REC TO TRX-REC
+    ADD 1 TO WS-DERNIER-ID GIVING TRX-ID
+    ACCEPT WS-DATE FROM DATE YYYYMMDD
+    ACCEPT WS-TIME FROM TIME
+    MOVE WS-DATE TO TRX-DATE
+    MOVE WS-TIME(1:6) TO TRX-HEURE
+
+    OPEN EXTEND F-TRX
+    IF WS-FS = "35"
+        *> fichier absent : OPEN OUTPUT le cree, puis on ecrit dedans
+        OPEN OUTPUT F-TRX
+    END-IF
+    IF WS-FS NOT = "00" AND WS-FS NOT = "05"
+        MOVE WS-FS TO LK-STATUS
+        GOBACK
+    END-IF
+    WRITE TRX-REC
+    MOVE WS-FS TO LK-STATUS
+    CLOSE F-TRX
+    IF LK-STATUS = "00"
+        MOVE TRX-REC TO LK-TRX-REC
+    END-IF
+    GOBACK.
+
+TROUVER-DERNIER-ID.
+    MOVE "00" TO LK-STATUS
+    MOVE 0 TO WS-DERNIER-ID
+    MOVE "N" TO WS-FIN
+    OPEN INPUT F-TRX
+    EVALUATE WS-FS
+        WHEN "00"
+            PERFORM UNTIL WS-FIN = "O"
+                READ F-TRX
+                    AT END MOVE "O" TO WS-FIN
+                    NOT AT END MOVE TRX-ID TO WS-DERNIER-ID
+                END-READ
+            END-PERFORM
+            CLOSE F-TRX
+        WHEN "35"
+            CONTINUE
+        WHEN OTHER
+            MOVE WS-FS TO LK-STATUS
+    END-EVALUATE.
