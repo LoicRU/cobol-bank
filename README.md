@@ -99,6 +99,83 @@ Operations    :       2
 Verification : OK
 ```
 
+## Exemple de session
+
+Session réelle sur les données de `make demo` (Alice, identifiant 2, PIN 4321, saisi sans affichage). Les lignes après `Choix :`, `Montant :` et les autres invites sont les saisies. Le menu client n'est reproduit qu'une fois.
+
+```
+=== COBOL-BANK ===
+1. Connexion
+0. Quitter
+Choix : 1
+Identifiant ou nom : 2
+PIN : 
+Bonjour Alice
+
+--- Menu client ---
+1. Mes comptes
+2. Depot
+3. Retrait
+4. Virement
+5. Historique d'un compte
+6. Releve de compte
+7. Changer mon PIN
+0. Deconnexion
+Choix : 1
+Compte 1000000001  solde       1078.85  statut A  courant
+Compte 1000000002  solde        348.44  statut A  courant
+Compte 1000000005  solde       1002.50  statut A  epargne
+
+[menu client]
+Choix : 2
+Numero de compte : 1000000001
+Montant : 100
+Nouveau solde :       1178.85
+Operation effectuee.
+
+[menu client]
+Choix : 3
+Numero de compte : 1000000001
+Montant : 20000
+Solde insuffisant.
+
+[menu client]
+Choix : 3
+Numero de compte : 1000000001
+Montant : 50
+Nouveau solde :       1128.85
+Operation effectuee.
+
+[menu client]
+Choix : 4
+Numero de compte : 1000000002
+Compte destinataire : 1000000001
+Montant : 50
+Nouveau solde :        298.44
+Operation effectuee.
+
+[menu client]
+Choix : 5
+Numero de compte : 1000000002
+2026-11-09 15:11 D       300.00 A                              
+2026-11-09 15:11 V        50.00 A                              
+2026-11-09 15:11 I         0.44 A INTERETS 202611              
+2026-11-09 15:11 F         2.00 A FRAIS DE TENUE 202611        
+2026-11-09 15:11 V        50.00 A                              
+
+[menu client]
+Choix : 0
+Deconnecte.
+
+=== COBOL-BANK ===
+1. Connexion
+0. Quitter
+Choix : 0
+Au revoir.
+```
+
+Le retrait de 20000 est refusé (solde insuffisant) et la dernière ligne de l'historique est le virement émis pendant la session. Les types sont D dépôt, R retrait, V virement, I intérêts, F frais ; `A` signale une opération acceptée, `R` une opération refusée.
+
 ## Interface web
 
 ```
