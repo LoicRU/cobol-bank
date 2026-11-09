@@ -191,7 +191,7 @@ python3 web/server.py 9000   # autre port
 Ouvrir `http://127.0.0.1:8080`, créer son compte client (« Créer mon compte client » : nom et PIN, l'identifiant attribué s'affiche) puis se connecter avec l'identifiant numérique et le PIN d'un **client** (les administrateurs restent en console, code 78). Pour essayer sur les données de démonstration :
 
 ```
-make web-demo                 # crée demo/ si besoin, puis lance le site dessus
+make web-demo                 # recrée demo/ à chaque lancement, puis lance le site dessus
 sh tests/demo.sh web 9000     # même chose sur un autre port
 ```
 

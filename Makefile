@@ -15,8 +15,8 @@ bin/api: src/API.cob $(MODULES) $(wildcard copybooks/*.cpy)
 
 web: bin/api
 	python3 web/server.py
-
-web-demo: bin/api
+	
+web-demo: bin/banque bin/api
 	sh tests/demo.sh web
 
 run: bin/banque

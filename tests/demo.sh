@@ -3,7 +3,7 @@
 #   sh tests/demo.sh        recree demo/ en jouant un scenario sur le vrai programme
 #   sh tests/demo.sh run    lance le programme sur les donnees de demo/
 #   sh tests/demo.sh web [port]   lance l'interface web sur les donnees de demo/
-#                           (cree demo/ si besoin ; affiche les comptes d'essai)
+#                           (recree demo/ a chaque lancement)
 # Variables : DEMO_DIR (defaut demo), PARAMS_FILE (defaut config/parametres.cfg)
 
 BIN=bin/banque
@@ -18,7 +18,7 @@ if [ "$1" = "run" ]; then
 fi
 
 if [ "$1" = "web" ]; then
-    [ -f "$CLIENTS_FILE" ] || sh "$0" > /dev/null
+    sh "$0" > /dev/null || exit 1    # demo/ toujours recree : jamais de donnees perimees
     exec python3 web/server.py --demo ${2:+"$2"}
 fi
 
