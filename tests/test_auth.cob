@@ -1,0 +1,281 @@
+*> test_auth.cob - tests de AUTH (clients, PIN, blocage, changement de PIN)
+*> Utilise tests/CLIENTS_TEST.dat, jamais data/CLIENTS.dat
+IDENTIFICATION DIVISION.
+PROGRAM-ID. TEST-AUTH.
+
+ENVIRONMENT DIVISION.
+INPUT-OUTPUT SECTION.
+FILE-CONTROL.
+    SELECT F-CLI ASSIGN TO "tests/CLIENTS_TEST.dat"
+        ORGANIZATION IS INDEXED
+        ACCESS MODE IS RANDOM
+        RECORD KEY IS FT-ID
+        FILE STATUS IS WS-FS-CLI.
+
+DATA DIVISION.
+FILE SECTION.
+FD F-CLI.
+COPY "CLIENT.cpy" REPLACING LEADING ==CLI-== BY ==FT-==
+                            ==CLIENT-REC== BY ==FT-REC==.
+
+WORKING-STORAGE SECTION.
+COPY "CLIENT.cpy".
+01 WS-ACTION      PIC X.
+01 WS-PIN         PIC X(6).
+01 WS-NEWPIN      PIC X(6).
+01 WS-STATUS      PIC XX.
+01 WS-ATTENDU     PIC XX.
+01 WS-LIBELLE     PIC X(44).
+01 WS-NB-ECHECS   PIC 9(3) VALUE 0.
+01 WS-FS-CLI      PIC XX.
+01 WS-ID          PIC 9(6).
+01 WS-NOM         PIC X(30).
+01 WS-ROLE        PIC X.
+01 WS-ECHECS-ATT  PIC 9(2).
+01 WS-STATUT-ATT  PIC X.
+01 WS-HASH-1      PIC 9(18).
+01 WS-HASH-2      PIC 9(18).
+
+PROCEDURE DIVISION.
+MAIN-PARA.
+    CALL "CBL_DELETE_FILE" USING "tests/CLIENTS_TEST.dat"
+    DISPLAY "CLIENTS_FILE" UPON ENVIRONMENT-NAME
+    DISPLAY "tests/CLIENTS_TEST.dat" UPON ENVIRONMENT-VALUE
+
+    *> --- creation ---
+    MOVE "C" TO WS-ACTION
+    MOVE 1 TO WS-ID
+    MOVE "Alice" TO WS-NOM
+    MOVE "C" TO WS-ROLE
+    MOVE "1234" TO WS-PIN
+    MOVE "00" TO WS-ATTENDU
+    MOVE "creer client 1 (PIN 1234)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE 0 TO WS-ECHECS-ATT
+    MOVE "A" TO WS-STATUT-ATT
+    PERFORM VERIF-ETAT
+
+    MOVE 2 TO WS-ID
+    MOVE "Bob" TO WS-NOM
+    MOVE "A" TO WS-ROLE
+    MOVE "creer client 2 admin (meme PIN 1234)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE 3 TO WS-ID
+    MOVE "Chloe" TO WS-NOM
+    MOVE "C" TO WS-ROLE
+    MOVE "123456" TO WS-PIN
+    MOVE "creer client 3 (PIN 6 chiffres)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE 1 TO WS-ID
+    MOVE "1234" TO WS-PIN
+    MOVE "22" TO WS-ATTENDU
+    MOVE "creer doublon (identifiant existant)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE 4 TO WS-ID
+    MOVE "12" TO WS-PIN
+    MOVE "83" TO WS-ATTENDU
+    MOVE "PIN trop court (refus)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE "12ab" TO WS-PIN
+    MOVE "PIN non numerique (refus)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE "12 345" TO WS-PIN
+    MOVE "PIN avec espace au milieu (refus)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    *> --- le PIN n'est pas stocke en clair, sel different par client ---
+    MOVE 1 TO WS-ID
+    PERFORM LIRE-FICHIER
+    MOVE FT-PIN-HASH TO WS-HASH-1
+    MOVE 2 TO WS-ID
+    PERFORM LIRE-FICHIER
+    MOVE FT-PIN-HASH TO WS-HASH-2
+    IF WS-HASH-1 NOT = WS-HASH-2 AND WS-HASH-1 NOT = 1234
+        DISPLAY "PASS meme PIN, empreintes differentes, pas en clair"
+    ELSE
+        DISPLAY "FAIL empreintes identiques ou PIN en clair"
+        ADD 1 TO WS-NB-ECHECS
+    END-IF
+
+    *> --- connexion ---
+    MOVE "L" TO WS-ACTION
+    MOVE 1 TO WS-ID
+    MOVE "1234" TO WS-PIN
+    MOVE "00" TO WS-ATTENDU
+    MOVE "connexion client 1 (bon PIN)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    IF CLI-NOM = "Alice" AND CLI-ROLE = "C" AND CLI-PIN-HASH = 0
+       AND CLI-SEL = 0
+        DISPLAY "  PASS nom et role renvoyes, empreinte masquee"
+    ELSE
+        DISPLAY "  FAIL enregistrement renvoye incorrect"
+        ADD 1 TO WS-NB-ECHECS
+    END-IF
+
+    MOVE "0000" TO WS-PIN
+    MOVE "81" TO WS-ATTENDU
+    MOVE "mauvais PIN (1er echec)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE 1 TO WS-ECHECS-ATT
+    MOVE "A" TO WS-STATUT-ATT
+    PERFORM VERIF-ETAT
+
+    MOVE "1234" TO WS-PIN
+    MOVE "00" TO WS-ATTENDU
+    MOVE "bon PIN : compteur remis a zero" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE 0 TO WS-ECHECS-ATT
+    PERFORM VERIF-ETAT
+
+    MOVE "0000" TO WS-PIN
+    MOVE "81" TO WS-ATTENDU
+    MOVE "mauvais PIN (1er echec)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE "mauvais PIN (2e echec)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE 2 TO WS-ECHECS-ATT
+    PERFORM VERIF-ETAT
+
+    MOVE "82" TO WS-ATTENDU
+    MOVE "mauvais PIN (3e echec : bloque)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE 3 TO WS-ECHECS-ATT
+    MOVE "B" TO WS-STATUT-ATT
+    PERFORM VERIF-ETAT
+
+    MOVE "1234" TO WS-PIN
+    MOVE "bon PIN mais client bloque (refus)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    PERFORM VERIF-ETAT
+
+    *> --- deblocage ---
+    MOVE "D" TO WS-ACTION
+    MOVE "00" TO WS-ATTENDU
+    MOVE "debloquer client 1" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+    MOVE 0 TO WS-ECHECS-ATT
+    MOVE "A" TO WS-STATUT-ATT
+    PERFORM VERIF-ETAT
+
+    MOVE "L" TO WS-ACTION
+    MOVE "connexion apres deblocage" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE 999 TO WS-ID
+    MOVE "81" TO WS-ATTENDU
+    MOVE "identifiant inconnu : meme code que mauvais PIN" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE "D" TO WS-ACTION
+    MOVE "23" TO WS-ATTENDU
+    MOVE "debloquer identifiant inconnu" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    *> --- changement de PIN (client 3 : 123456 -> 9999) ---
+    MOVE "P" TO WS-ACTION
+    MOVE 3 TO WS-ID
+    MOVE "000000" TO WS-PIN
+    MOVE "9999" TO WS-NEWPIN
+    MOVE "81" TO WS-ATTENDU
+    MOVE "changer PIN avec mauvais ancien PIN (refus)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE "123456" TO WS-PIN
+    MOVE "12" TO WS-NEWPIN
+    MOVE "83" TO WS-ATTENDU
+    MOVE "changer PIN vers un PIN invalide (refus)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE "9999" TO WS-NEWPIN
+    MOVE "00" TO WS-ATTENDU
+    MOVE "changer PIN 123456 -> 9999" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE "L" TO WS-ACTION
+    MOVE "81" TO WS-ATTENDU
+    MOVE "connexion avec l'ancien PIN (refus)" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE "9999" TO WS-PIN
+    MOVE "00" TO WS-ATTENDU
+    MOVE "connexion avec le nouveau PIN" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    MOVE "X" TO WS-ACTION
+    MOVE "99" TO WS-ATTENDU
+    MOVE "action inconnue" TO WS-LIBELLE
+    PERFORM APPELER
+    PERFORM VERIFIER
+
+    CALL "CBL_DELETE_FILE" USING "tests/CLIENTS_TEST.dat"
+    IF WS-NB-ECHECS = 0
+        DISPLAY "TOUS LES TESTS PASSENT"
+        MOVE 0 TO RETURN-CODE
+    ELSE
+        DISPLAY WS-NB-ECHECS " TEST(S) EN ECHEC"
+        MOVE 1 TO RETURN-CODE
+    END-IF
+    STOP RUN.
+
+*> Appel de AUTH avec WS-ID, WS-NOM, WS-ROLE, WS-PIN, WS-NEWPIN
+APPELER.
+    INITIALIZE CLIENT-REC
+    MOVE WS-ID TO CLI-ID
+    MOVE WS-NOM TO CLI-NOM
+    MOVE WS-ROLE TO CLI-ROLE
+    CALL "AUTH" USING WS-ACTION CLIENT-REC WS-PIN WS-NEWPIN WS-STATUS.
+
+VERIFIER.
+    IF WS-STATUS = WS-ATTENDU
+        DISPLAY "PASS " WS-LIBELLE
+    ELSE
+        DISPLAY "FAIL " WS-LIBELLE " (statut " WS-STATUS
+                ", attendu " WS-ATTENDU ")"
+        ADD 1 TO WS-NB-ECHECS
+    END-IF.
+
+*> Lit le client WS-ID directement dans le fichier
+LIRE-FICHIER.
+    OPEN INPUT F-CLI
+    MOVE WS-ID TO FT-ID
+    READ F-CLI KEY IS FT-ID
+    CLOSE F-CLI.
+
+*> Compare compteur d'echecs et statut du client WS-ID a ceux attendus
+VERIF-ETAT.
+    PERFORM LIRE-FICHIER
+    IF FT-ECHECS = WS-ECHECS-ATT AND FT-STATUT = WS-STATUT-ATT
+        DISPLAY "  PASS etat : " FT-ECHECS " echec(s), statut " FT-STATUT
+    ELSE
+        DISPLAY "  FAIL etat : " FT-ECHECS " echec(s), statut " FT-STATUT
+                " (attendu " WS-ECHECS-ATT ", " WS-STATUT-ATT ")"
+        ADD 1 TO WS-NB-ECHECS
+    END-IF.
