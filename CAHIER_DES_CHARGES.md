@@ -4,7 +4,7 @@ Mini système de core banking écrit en COBOL (GnuCOBOL), avec fichiers indexés
 
 - **Auteur** : Loïc Ruyssen
 - **Date** : 2026-11-09
-- **Version du document** : 1.1 (V1 du projet, complétée : export CSV, connexion par nom, jeu de démonstration, découvert autorisé et comptes épargne)
+- **Version du document** : 1.1 (V1 du projet, complétée : export CSV, connexion par nom, jeu de démonstration, découvert autorisé, comptes épargne et interface web locale)
 
 ---
 
@@ -40,11 +40,12 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - Relevé de compte imprimable (fichier texte formaté).
 - Jeu de données de test et tests de bout en bout.
 - *(V1.1)* Export CSV des relevés, connexion par identifiant ou par nom, jeu de démonstration (`make demo`).
+- *(V1.1)* Interface web locale côté client (consultation, dépôt, retrait, virement, historique) appelant les programmes COBOL.
 - *(V1.1)* Découvert autorisé par compte courant et comptes épargne (taux propre, retrait en espèces interdit).
 
 ### Exclu de la V1
 
-- Interface web ou API REST.
+- API REST publique, interface web exposée sur un réseau (la V1.1 fournit une interface web locale, sans HTTPS).
 - Virements vers des banques externes (SEPA, SWIFT).
 - Multi-devises.
 - Accès concurrent de plusieurs utilisateurs simultanés.
@@ -274,7 +275,7 @@ intérêt = solde × taux annuel ÷ 12      (arrondi au centime, solde > 0 uniqu
 
 ## 10. Évolutions possibles (hors V1)
 
-- Interface web ou API REST appelant les programmes COBOL.
+- Interface web d'administration, HTTPS et sessions, API REST documentée.
 - Virements programmés.
 - Règles de fraude plus riches (géolocalisation simulée, fréquence, horaires).
 - Migration du stockage vers une base SQL.

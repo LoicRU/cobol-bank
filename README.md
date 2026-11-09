@@ -11,6 +11,7 @@ Mini core-banking en **GnuCOBOL** : fichiers indexés, menu console, authentific
 - **Opérations** : dépôt, retrait, virement atomique ; chaque tentative (acceptée ou refusée, avec motif) est écrite dans l'historique.
 - **Fraude** : plafond journalier de sorties (refus) et montant anormal par rapport à la moyenne du compte (alerte), journal d'alertes consultable par l'administrateur.
 - **Batch mensuel** : intérêts (taux propre à l'épargne) et frais de tenue (comptes courants seulement), rejouable sans doublon (une période déjà traitée est refusée).
+- **Interface web** (côté client) : consultation des comptes, dépôt, retrait, virement et historique dans le navigateur, via un petit serveur Python qui appelle le COBOL.
 - **Relevés** : fichier texte formaté ou export CSV sur une période, avec contrôle de cohérence (solde initial + crédits − débits = solde final).
 
 ## Installation
@@ -20,6 +21,7 @@ sudo apt install gnucobol      # testé avec GnuCOBOL 3.1.2
 make                           # compile bin/banque
 make run                       # lance le programme
 make test                      # compile et lance toutes les suites de tests
+make web                       # lance l'interface web sur http://127.0.0.1:8080 (Python 3 requis)
 make demo                      # cree un jeu de donnees de demonstration dans demo/
 make run-demo                  # lance le programme sur ces donnees
 make clean                     # supprime exécutables et fichiers de test
@@ -97,6 +99,25 @@ Operations    :       2
 Verification : OK
 ```
 
+## Interface web
+
+```
+make web                 # compile bin/api puis lance le serveur sur le port 8080
+python3 web/server.py 9000   # autre port
+```
+
+Ouvrir `http://127.0.0.1:8080`, se connecter avec l'identifiant numérique et le PIN d'un **client** (les administrateurs restent en console, code 78). Pour essayer sur les données de démonstration, lancer d'abord `make demo` puis :
+
+```
+CLIENTS_FILE=demo/CLIENTS.dat COMPTES_FILE=demo/COMPTES.dat TRX_FILE=demo/TRANSACTIONS.dat ALERTES_FILE=demo/ALERTES.dat python3 web/server.py
+```
+
+Fonctionnement : `web/index.html` appelle `POST /api/<commande>` sur `web/server.py`, qui transmet une ligne (`commande id pin paramètres`) à `bin/api` (module `API.cob`) par l'entrée standard et renvoie son JSON. Le serveur ne garde aucun état : l'identifiant et le PIN accompagnent chaque requête et sont vérifiés par `AUTH` à chaque fois, donc le blocage après échecs de PIN, le plafond journalier, le découvert et les règles de l'épargne s'appliquent exactement comme en console. Le serveur n'écoute que sur `127.0.0.1`, valide strictement les champs (chiffres seulement) et ne met ni PIN ni corps de requête dans ses logs ; les appels au COBOL sont sérialisés.
+
+> Usage **local uniquement** : pas de HTTPS ni de session, le PIN circule en clair entre le navigateur et le serveur. Ne pas exposer ce serveur sur un réseau.
+
+Commandes de `bin/api` : `connexion`, `comptes`, `depot`, `retrait`, `virement`, `historique` (200 dernières opérations). Codes ajoutés : 74 (compte d'un autre client), 77 (commande inconnue), 78 (rôle non autorisé), 79 (paramètre invalide).
+
 ## Menus
 
 | Menu client | Menu administrateur |
@@ -129,7 +150,8 @@ Un client n'accède qu'à ses propres comptes (code 74 sinon). Le rôle administ
 ## Architecture
 
 ```
-src/          programme principal et modules
+src/          programme principal, modules et API.cob (interface web)
+web/          serveur Python et page HTML
 copybooks/    structures d'enregistrements (COMPTE, CLIENT, TRX, ALERTE, BATCH, RELEVE, PARAMS)
 config/       parametres.cfg
 data/         fichiers de données (ignorés par Git)
@@ -146,6 +168,7 @@ tests/        suites de tests
 | `FRAUDE` | plafond journalier, montant anormal, alertes d'échecs de PIN | 00, 96 (plafond), 97 (alerte seule) |
 | `RELEVE` | relevé de compte (texte ou CSV) sur une période | 00, 23, 73, 74, 75 (incohérent), 76 (format inconnu) |
 | `BATCH-INT` | intérêts et frais mensuels | 00, 71 (déjà traitée), 72 (interrompue), 73 |
+| `API` | une commande client en JSON pour l'interface web (utilise AUTH, COMPTE) | 00 et codes d'AUTH / COMPTE, 74, 77, 78, 79 |
 | `PARAM` | lecture et validation de la configuration | 00, 61, 62, 63 |
 
 Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexés ; `TRANSACTIONS.dat` et `ALERTES.dat` sont des journaux en ajout seul.
@@ -181,7 +204,7 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 
 ## Tests
 
-`make test` lance neuf suites, chacune sur des fichiers temporaires dans `tests/` (jamais `data/` ni `reports/`) :
+`make test` lance dix suites, chacune sur des fichiers temporaires dans `tests/` (jamais `data/` ni `reports/`) :
 
 | Suite | Couvre |
 |---|---|
@@ -193,6 +216,7 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 | `test_epargne` | batch : intérêts d'épargne, pas de frais sur l'épargne, frais limités par le découvert |
 | `test_trx` | numérotation de l'historique |
 | `test_menu.sh` | scénario complet par saisies redirigées (client, admin, blocage, batch, connexion par nom) |
+| `test_web.sh` | `bin/api` et serveur HTTP : connexion, comptes, opérations, refus, injections de paramètres, PIN absent des logs |
 | `test_demo.sh` | le jeu de démonstration produit les soldes, alertes et relevés annoncés |
 
 ## Limites connues
