@@ -17,10 +17,22 @@
 *>   ouvrir     id pin type            (type C courant ou E epargne)
 *>   inscription 0 pin nom             (sans authentification ; le nom ecrit
 *>                                      les espaces en "_" ; role client)
+*> Commandes administrateur (role A obligatoire, sinon 78 ; les commandes
+*> ci-dessus exigent le role client, sinon 78) :
+*>   admin-connexion id pin
+*>   admin-clients   id pin            tous les clients (sans sel ni empreinte)
+*>   admin-comptes   id pin            tous les comptes
+*>   admin-alertes   id pin            les 200 dernieres alertes
+*>   admin-bloquer   id pin client     (pas soi-meme : 79)
+*>   admin-debloquer id pin client
+*>   admin-modifier  id pin compte plafond decouvert statut   (statut A, G ou C ;
+*>                                     decouvert 0 obligatoire sur epargne)
+*>   admin-batch     id pin [AAAAMM]   traitement mensuel (defaut : mois courant)
 *> Reponse : {"ok":true,...} ou {"ok":false,"statut":"NN"}
 *> Statuts : ceux de AUTH et COMPTE, plus
 *>     74 compte qui n'est pas au client   77 commande inconnue
-*>     78 role non autorise (administrateur : console uniquement)
+*>     78 role non autorise (commande client refusee a un administrateur et
+*>        inversement)   71 72 73 : statuts du traitement mensuel
 *>     79 parametre invalide (compte ou montant)
 *>     83 PIN invalide  84 nom invalide  85 trop d'inscriptions
 *>     87 type invalide 88 trop de comptes
@@ -39,6 +51,14 @@ FILE-CONTROL.
     SELECT F-TRX ASSIGN TO DYNAMIC WS-TRX-NAME
         ORGANIZATION IS LINE SEQUENTIAL
         FILE STATUS IS WS-FS.
+    SELECT F-CLI ASSIGN TO DYNAMIC WS-CLI-NAME
+        ORGANIZATION IS INDEXED
+        ACCESS MODE IS SEQUENTIAL
+        RECORD KEY IS FL-ID
+        FILE STATUS IS WS-FS.
+    SELECT F-ALR ASSIGN TO DYNAMIC WS-ALR-NAME
+        ORGANIZATION IS LINE SEQUENTIAL
+        FILE STATUS IS WS-FS.
 
 DATA DIVISION.
 FILE SECTION.
@@ -48,16 +68,34 @@ COPY "COMPTE.cpy" REPLACING LEADING ==CPT-== BY ==FC-==
 FD F-TRX.
 COPY "TRX.cpy" REPLACING LEADING ==TRX-== BY ==FT-==
                          ==TRX-REC== BY ==FT-REC==.
+FD F-CLI.
+COPY "CLIENT.cpy" REPLACING LEADING ==CLI-== BY ==FL-==
+                            ==CLIENT-REC== BY ==FL-REC==.
+FD F-ALR.
+COPY "ALERTE.cpy" REPLACING LEADING ==ALR-== BY ==FA-==
+                            ==ALERTE-REC== BY ==FA-REC==.
 
 WORKING-STORAGE SECTION.
 COPY "COMPTE.cpy".
 COPY "CLIENT.cpy".
 COPY "PARAMS.cpy".
+COPY "BATCH.cpy".
+01 WS-CLI-NAME      PIC X(100).
+01 WS-ALR-NAME      PIC X(100).
+01 WS-ROLE          PIC X.
+01 WS-ADMIN         PIC X VALUE "N".
+01 WS-P4            PIC X(32).
+01 WS-PERIODE       PIC 9(6).
+01 WS-AUJ           PIC 9(8).
+01 WS-PLAF          PIC 9(9)V99.
+01 WS-DECOUV        PIC 9(9)V99.
+01 WS-STAT-NEW      PIC X.
+01 WS-ED-T          PIC Z(10)9.99.
 01 WS-FS            PIC XX.
 01 WS-CPT-NAME      PIC X(100).
 01 WS-TRX-NAME      PIC X(100).
 01 WS-LIGNE         PIC X(200).
-01 WS-CMD           PIC X(12).
+01 WS-CMD           PIC X(16).
 01 WS-ID-TXT        PIC X(20).
 01 WS-PIN           PIC X(6).
 01 WS-PIN-TXT       PIC X(20).
@@ -105,11 +143,20 @@ MAIN-PARA.
         ON EXCEPTION MOVE "data/TRANSACTIONS.dat" TO WS-TRX-NAME
     END-ACCEPT
 
+    MOVE "data/CLIENTS.dat" TO WS-CLI-NAME
+    ACCEPT WS-CLI-NAME FROM ENVIRONMENT "CLIENTS_FILE"
+        ON EXCEPTION MOVE "data/CLIENTS.dat" TO WS-CLI-NAME
+    END-ACCEPT
+    MOVE "data/ALERTES.dat" TO WS-ALR-NAME
+    ACCEPT WS-ALR-NAME FROM ENVIRONMENT "ALERTES_FILE"
+        ON EXCEPTION MOVE "data/ALERTES.dat" TO WS-ALR-NAME
+    END-ACCEPT
+
     MOVE SPACES TO WS-LIGNE WS-CMD WS-ID-TXT WS-PIN-TXT
-                   WS-P1 WS-P2 WS-P3
+                   WS-P1 WS-P2 WS-P3 WS-P4
     ACCEPT WS-LIGNE
     UNSTRING WS-LIGNE DELIMITED BY ALL SPACE
-        INTO WS-CMD WS-ID-TXT WS-PIN-TXT WS-P1 WS-P2 WS-P3
+        INTO WS-CMD WS-ID-TXT WS-PIN-TXT WS-P1 WS-P2 WS-P3 WS-P4
     END-UNSTRING
 
     IF WS-CMD = "inscription"
@@ -117,6 +164,19 @@ MAIN-PARA.
         STOP RUN
     END-IF
     PERFORM AUTHENTIFIER
+    *> commande admin-* : role A ; toute autre commande : role C
+    IF WS-STATUS = "00"
+        IF WS-CMD(1:6) = "admin-"
+            MOVE "O" TO WS-ADMIN
+            IF WS-ROLE NOT = "A"
+                MOVE "78" TO WS-STATUS
+            END-IF
+        ELSE
+            IF WS-ROLE NOT = "C"
+                MOVE "78" TO WS-STATUS
+            END-IF
+        END-IF
+    END-IF
     IF WS-STATUS NOT = "00"
         PERFORM REPONDRE-ERREUR
     ELSE
@@ -128,6 +188,14 @@ MAIN-PARA.
             WHEN "virement"   PERFORM CMD-VIREMENT
             WHEN "historique" PERFORM CMD-HISTORIQUE
             WHEN "ouvrir"     PERFORM CMD-OUVRIR
+            WHEN "admin-connexion" PERFORM CMD-CONNEXION
+            WHEN "admin-clients"   PERFORM CMD-ADMIN-CLIENTS
+            WHEN "admin-comptes"   PERFORM CMD-COMPTES
+            WHEN "admin-alertes"   PERFORM CMD-ADMIN-ALERTES
+            WHEN "admin-bloquer"   PERFORM CMD-ADMIN-STATUT
+            WHEN "admin-debloquer" PERFORM CMD-ADMIN-STATUT
+            WHEN "admin-modifier"  PERFORM CMD-ADMIN-MODIFIER
+            WHEN "admin-batch"     PERFORM CMD-ADMIN-BATCH
             WHEN OTHER
                 MOVE "77" TO WS-STATUS
                 PERFORM REPONDRE-ERREUR
@@ -135,7 +203,7 @@ MAIN-PARA.
     END-IF
     STOP RUN.
 
-*> Identifiant et PIN -> AUTH "L" ; seul le role client est admis
+*> Identifiant et PIN -> AUTH "L" ; le role est garde dans WS-ROLE
 AUTHENTIFIER.
     MOVE "81" TO WS-STATUS
     MOVE WS-ID-TXT TO WS-TXT
@@ -149,10 +217,8 @@ AUTHENTIFIER.
         MOVE "L" TO WS-ACTION
         CALL "AUTH" USING WS-ACTION CLIENT-REC WS-PIN WS-NEW-PIN
                           WS-STATUS
-        IF WS-STATUS = "00" AND CLI-ROLE NOT = "C"
-            MOVE "78" TO WS-STATUS
-        END-IF
         IF WS-STATUS = "00"
+            MOVE CLI-ROLE TO WS-ROLE
             MOVE CLI-NOM TO WS-NOM
             INSPECT WS-NOM REPLACING ALL '"' BY "'"
             INSPECT WS-NOM REPLACING ALL "\" BY "/"
@@ -218,7 +284,7 @@ CMD-COMPTES.
                 AT END
                     MOVE "O" TO WS-FIN
                 NOT AT END
-                    IF FC-ID-CLIENT = WS-ID-CLIENT
+                    IF WS-ADMIN = "O" OR FC-ID-CLIENT = WS-ID-CLIENT
                         PERFORM ECRIRE-COMPTE
                     END-IF
             END-READ
@@ -244,7 +310,9 @@ ECRIRE-COMPTE.
     ELSE
         DISPLAY ',"type":"C"' WITH NO ADVANCING
     END-IF
-    DISPLAY ',"statut":"' FC-STATUT '"}' WITH NO ADVANCING.
+    DISPLAY ',"statut":"' FC-STATUT '","client":' WITH NO ADVANCING
+    MOVE FC-ID-CLIENT TO WS-ED-N
+    DISPLAY FUNCTION TRIM(WS-ED-N) '}' WITH NO ADVANCING.
 
 *> depot / retrait : WS-P1 = compte, WS-P2 = montant
 CMD-DEPOT-RETRAIT.
@@ -422,6 +490,217 @@ ECRIRE-OPERATION.
             FT-STATUT '","motif":"' FUNCTION TRIM(FT-MOTIF) '"}'
             WITH NO ADVANCING.
 
+*> admin-clients : tous les clients, sans sel ni empreinte
+CMD-ADMIN-CLIENTS.
+    MOVE "Y" TO WS-PREMIER
+    DISPLAY '{"ok":true,"clients":[' WITH NO ADVANCING
+    OPEN INPUT F-CLI
+    IF WS-FS = "00"
+        MOVE "N" TO WS-FIN
+        PERFORM UNTIL WS-FIN = "O"
+            READ F-CLI NEXT RECORD
+                AT END
+                    MOVE "O" TO WS-FIN
+                NOT AT END
+                    PERFORM ECRIRE-CLIENT
+            END-READ
+        END-PERFORM
+        CLOSE F-CLI
+    END-IF
+    DISPLAY ']}'.
+
+ECRIRE-CLIENT.
+    IF WS-PREMIER = "N"
+        DISPLAY "," WITH NO ADVANCING
+    END-IF
+    MOVE "N" TO WS-PREMIER
+    MOVE FL-NOM TO WS-NOM
+    INSPECT WS-NOM REPLACING ALL '"' BY "'"
+    INSPECT WS-NOM REPLACING ALL "\" BY "/"
+    MOVE FL-ID TO WS-ED-N
+    DISPLAY '{"id":' FUNCTION TRIM(WS-ED-N) ',"nom":"'
+            FUNCTION TRIM(WS-NOM) '","role":"' FL-ROLE '","statut":"'
+            FL-STATUT '"}' WITH NO ADVANCING.
+
+*> admin-alertes : les WS-NB-MAX dernieres alertes
+CMD-ADMIN-ALERTES.
+    MOVE 0 TO WS-NB
+    OPEN INPUT F-ALR
+    IF WS-FS = "00"
+        MOVE "N" TO WS-FIN
+        PERFORM UNTIL WS-FIN = "O"
+            READ F-ALR
+                AT END MOVE "O" TO WS-FIN
+                NOT AT END ADD 1 TO WS-NB
+            END-READ
+        END-PERFORM
+        CLOSE F-ALR
+    END-IF
+    IF WS-NB > WS-NB-MAX
+        COMPUTE WS-DEBUT = WS-NB - WS-NB-MAX
+    ELSE
+        MOVE 0 TO WS-DEBUT
+    END-IF
+    MOVE 0 TO WS-N
+    MOVE "Y" TO WS-PREMIER
+    MOVE WS-NB TO WS-ED-N
+    DISPLAY '{"ok":true,"total":' FUNCTION TRIM(WS-ED-N)
+            ',"alertes":[' WITH NO ADVANCING
+    OPEN INPUT F-ALR
+    IF WS-FS = "00"
+        MOVE "N" TO WS-FIN
+        PERFORM UNTIL WS-FIN = "O"
+            READ F-ALR
+                AT END MOVE "O" TO WS-FIN
+                NOT AT END
+                    ADD 1 TO WS-N
+                    IF WS-N > WS-DEBUT
+                        PERFORM ECRIRE-ALERTE
+                    END-IF
+            END-READ
+        END-PERFORM
+        CLOSE F-ALR
+    END-IF
+    DISPLAY ']}'.
+
+ECRIRE-ALERTE.
+    IF WS-PREMIER = "N"
+        DISPLAY "," WITH NO ADVANCING
+    END-IF
+    MOVE "N" TO WS-PREMIER
+    MOVE FA-DETAIL TO WS-NOM
+    INSPECT WS-NOM REPLACING ALL '"' BY "'"
+    INSPECT WS-NOM REPLACING ALL "\" BY "/"
+    MOVE FA-MONTANT TO WS-ED-M
+    DISPLAY '{"date":"' FA-DATE '","heure":"' FA-HEURE '","regle":"'
+            FUNCTION TRIM(FA-REGLE) '","client":' WITH NO ADVANCING
+    MOVE FA-ID-CLIENT TO WS-ED-N
+    DISPLAY FUNCTION TRIM(WS-ED-N) ',"compte":"' FA-CPT '","montant":'
+            FUNCTION TRIM(WS-ED-M) ',"detail":"' FUNCTION TRIM(WS-NOM)
+            '"}' WITH NO ADVANCING.
+
+*> admin-bloquer / admin-debloquer : WS-P1 = identifiant du client
+CMD-ADMIN-STATUT.
+    MOVE WS-P1 TO WS-TXT
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O" OR WS-NUM-VAL > 999999 OR WS-NUM-VAL = 0
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    IF WS-CMD = "admin-bloquer" AND WS-NUM-VAL = WS-ID-CLIENT
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    INITIALIZE CLIENT-REC
+    MOVE WS-NUM-VAL TO CLI-ID
+    IF WS-CMD = "admin-bloquer"
+        MOVE "B" TO WS-ACTION
+    ELSE
+        MOVE "D" TO WS-ACTION
+    END-IF
+    CALL "AUTH" USING WS-ACTION CLIENT-REC WS-PIN WS-NEW-PIN WS-STATUS
+    IF WS-STATUS = "00"
+        DISPLAY '{"ok":true,"statut":"00"}'
+    ELSE
+        PERFORM REPONDRE-ERREUR
+    END-IF.
+
+*> admin-modifier : WS-P1 compte, WS-P2 plafond, WS-P3 decouvert, WS-P4 statut
+CMD-ADMIN-MODIFIER.
+    MOVE WS-P1 TO WS-TXT
+    PERFORM CONVERTIR-NUM
+    IF WS-NUM-OK NOT = "O"
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-NUM-VAL TO WS-SRC
+    MOVE WS-P2 TO WS-TXT
+    PERFORM CONVERTIR-MONTANT-ZERO
+    IF WS-MONT-OK NOT = "O"
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-MONTANT TO WS-PLAF
+    MOVE WS-P3 TO WS-TXT
+    PERFORM CONVERTIR-MONTANT-ZERO
+    IF WS-MONT-OK NOT = "O"
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-MONTANT TO WS-DECOUV
+    IF WS-P4(2:) NOT = SPACES
+       OR (WS-P4(1:1) NOT = "A" AND WS-P4(1:1) NOT = "G"
+           AND WS-P4(1:1) NOT = "C")
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-P4(1:1) TO WS-STAT-NEW
+    INITIALIZE COMPTE-REC
+    MOVE WS-SRC TO CPT-NUM
+    MOVE "L" TO WS-ACTION
+    CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
+    IF WS-STATUS NOT = "00"
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    IF CPT-EPARGNE AND WS-DECOUV > 0
+        MOVE "79" TO WS-STATUS
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    MOVE WS-PLAF TO CPT-PLAFOND
+    MOVE WS-DECOUV TO CPT-DECOUVERT
+    MOVE WS-STAT-NEW TO CPT-STATUT
+    MOVE "U" TO WS-ACTION
+    CALL "COMPTE" USING WS-ACTION COMPTE-REC WS-MONTANT WS-DST WS-STATUS
+    IF WS-STATUS = "00"
+        DISPLAY '{"ok":true,"statut":"00"}'
+    ELSE
+        PERFORM REPONDRE-ERREUR
+    END-IF.
+
+*> admin-batch : WS-P1 = periode AAAAMM (facultative)
+CMD-ADMIN-BATCH.
+    ACCEPT WS-AUJ FROM DATE YYYYMMDD
+    COMPUTE WS-PERIODE = WS-AUJ / 100
+    IF WS-P1 NOT = SPACES
+        MOVE WS-P1 TO WS-TXT
+        PERFORM CONVERTIR-NUM
+        IF WS-NUM-OK = "O" AND WS-NUM-VAL <= 999999
+            MOVE WS-NUM-VAL TO WS-PERIODE
+        ELSE
+            MOVE 0 TO WS-PERIODE
+        END-IF
+    END-IF
+    CALL "SYSTEM" USING "mkdir -p data reports"
+    CALL "BATCH-INT" USING WS-PERIODE BATCH-REC WS-STATUS
+    IF WS-STATUS NOT = "00"
+        PERFORM REPONDRE-ERREUR
+        EXIT PARAGRAPH
+    END-IF
+    DISPLAY '{"ok":true,"periode":"' WS-PERIODE '","actifs":'
+            WITH NO ADVANCING
+    MOVE BAT-NB-ACTIFS TO WS-ED-N
+    DISPLAY FUNCTION TRIM(WS-ED-N) ',"interets":' WITH NO ADVANCING
+    MOVE BAT-NB-INTERETS TO WS-ED-N
+    DISPLAY FUNCTION TRIM(WS-ED-N) ',"total_interets":' WITH NO ADVANCING
+    MOVE BAT-TOT-INTERETS TO WS-ED-T
+    DISPLAY FUNCTION TRIM(WS-ED-T) ',"frais":' WITH NO ADVANCING
+    MOVE BAT-NB-FRAIS TO WS-ED-N
+    DISPLAY FUNCTION TRIM(WS-ED-N) ',"total_frais":' WITH NO ADVANCING
+    MOVE BAT-TOT-FRAIS TO WS-ED-T
+    DISPLAY FUNCTION TRIM(WS-ED-T) ',"refuses":' WITH NO ADVANCING
+    MOVE BAT-NB-FRAIS-REFUSES TO WS-ED-N
+    DISPLAY FUNCTION TRIM(WS-ED-N) ',"anomalies":' WITH NO ADVANCING
+    MOVE BAT-NB-ANOMALIES TO WS-ED-N
+    DISPLAY FUNCTION TRIM(WS-ED-N) '}'.
+
 REPONDRE-ERREUR.
     DISPLAY '{"ok":false,"statut":"' WS-STATUS '"}'.
 
@@ -434,6 +713,19 @@ CONVERTIR-NUM.
         IF FUNCTION TRIM(WS-TXT) IS NUMERIC
             MOVE FUNCTION NUMVAL(WS-TXT) TO WS-NUM-VAL
             MOVE "O" TO WS-NUM-OK
+        END-IF
+    END-IF.
+
+*> WS-TXT -> WS-MONTANT ; WS-MONT-OK = "O" si 0 <= montant < 10 millions
+CONVERTIR-MONTANT-ZERO.
+    MOVE "N" TO WS-MONT-OK
+    INSPECT WS-TXT REPLACING ALL "," BY "."
+    IF FUNCTION TEST-NUMVAL(WS-TXT) = 0
+        IF FUNCTION NUMVAL(WS-TXT) >= 0
+           AND FUNCTION NUMVAL(WS-TXT) < 10000000
+           AND FUNCTION MOD(FUNCTION NUMVAL(WS-TXT) * 100, 1) = 0
+            MOVE FUNCTION NUMVAL(WS-TXT) TO WS-MONTANT
+            MOVE "O" TO WS-MONT-OK
         END-IF
     END-IF.
 

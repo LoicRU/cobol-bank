@@ -59,6 +59,12 @@ th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: l
 tr.refuse td { color: var(--doux); }
 .defile { overflow-x: auto; }
 .vide { color: var(--doux); }
+.badge { font-size: .75rem; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--trait); color: var(--doux); }
+.badge.ko { color: var(--ko); border-color: var(--ko); }
+td button, .petit { padding: 4px 10px; font-size: .85rem; }
+td:last-child, th:last-child { text-align: right; }
+table.g th, table.g td { text-align: left; }
+table.g th:last-child, table.g td:last-child { text-align: right; }
 .demo-ligne { display: flex; justify-content: space-between; align-items: center; gap: 12px;
   padding: 8px 0; border-top: 1px solid var(--trait); }
 .demo-ligne button { flex: 0 0 auto; }
@@ -88,7 +94,6 @@ tr.refuse td { color: var(--doux); }
              minlength="4" maxlength="6" required>
       <p><button type="submit">Se connecter</button></p>
     </form>
-    <p class="vide">Les comptes administrateur se gèrent en console.</p>
     <p><button class="secondaire" id="aller-inscription" type="button">Créer mon compte client</button></p>
   </section>
 
@@ -116,6 +121,57 @@ tr.refuse td { color: var(--doux); }
     </form>
     <p class="vide">Lettres, chiffres, espace, tiret et apostrophe. Une fois connecté, vous ouvrirez vos comptes vous-même.</p>
   </section>
+
+  <div id="vue-admin" hidden>
+    <section class="carte">
+      <h2>Clients</h2>
+      <div class="defile" id="a-clients"></div>
+    </section>
+
+    <section class="carte">
+      <h2>Comptes</h2>
+      <div class="defile" id="a-comptes"></div>
+    </section>
+
+    <section class="carte" id="a-modif" hidden>
+      <h2>Modifier le compte <span class="type" id="m-num"></span></h2>
+      <form id="form-modif" autocomplete="off">
+        <div class="ligne">
+          <div><label for="m-plafond">Plafond journalier</label>
+            <input id="m-plafond" inputmode="decimal" pattern="[0-9]{1,7}([.,][0-9]{1,2})?" required></div>
+          <div><label for="m-decouvert">Découvert autorisé</label>
+            <input id="m-decouvert" inputmode="decimal" pattern="[0-9]{1,7}([.,][0-9]{1,2})?" required></div>
+          <div><label for="m-statut">Statut</label>
+            <select id="m-statut">
+              <option value="A">Actif</option><option value="G">Gelé</option><option value="C">Clos</option>
+            </select></div>
+        </div>
+        <p>
+          <button type="submit" id="m-valider">Enregistrer</button>
+          <button type="button" class="secondaire" id="m-annuler">Annuler</button>
+        </p>
+      </form>
+    </section>
+
+    <section class="carte">
+      <h2>Traitement mensuel</h2>
+      <p class="vide">Intérêts et frais de tenue de compte. Une période ne se traite qu'une fois.</p>
+      <div class="ligne">
+        <div><label for="b-periode">Période AAAAMM (vide = mois courant)</label>
+          <input id="b-periode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"></div>
+      </div>
+      <p>
+        <button type="button" id="b-lancer">Lancer le traitement</button>
+        <button type="button" class="secondaire" id="b-annuler" hidden>Annuler</button>
+      </p>
+      <div id="b-resultat"></div>
+    </section>
+
+    <section class="carte">
+      <h2>Alertes <span class="type" id="al-total"></span></h2>
+      <div class="defile" id="a-alertes"></div>
+    </section>
+  </div>
 
   <div id="vue-compte" hidden>
     <section class="carte">
@@ -171,7 +227,10 @@ const MESSAGES = {
   "63": "Configuration invalide : voir l'administrateur.",
   "74": "Ce compte n'est pas à vous.",
   "77": "Commande inconnue.",
-  "78": "Les comptes administrateur se gèrent en console.",
+  "71": "Cette période a déjà été traitée.",
+  "72": "Période interrompue lors d'un lancement précédent : vérification manuelle nécessaire.",
+  "73": "Période invalide.",
+  "78": "Action non autorisée pour ce rôle.",
   "79": "Saisie invalide.",
   "81": "Identifiant ou PIN incorrect.",
   "82": "Client bloqué : voir un administrateur.",
@@ -189,7 +248,7 @@ const MESSAGES = {
 const TYPES = { D: "Dépôt", R: "Retrait", V: "Virement", I: "Intérêts", F: "Frais", O: "Ouverture du compte" };
 const $ = (id) => document.getElementById(id);
 
-let session = null;       // { id, pin, nom } : en mémoire seulement
+let session = null;       // { id, pin, nom, admin } : en mémoire seulement
 let comptes = [];
 let compteCourant = null; // numéro du compte affiché
 let operation = "depot";
@@ -312,23 +371,162 @@ function choisirOperation(op) {
 }
 
 function afficher(connecte, inscription) {
+  const admin = connecte && session && session.admin;
   $("vue-connexion").hidden = connecte || !!inscription;
   $("demo").hidden = connecte || !!inscription || $("demo-liste").children.length === 0;
   $("vue-inscription").hidden = !inscription;
-  $("vue-compte").hidden = !connecte;
+  $("vue-compte").hidden = !connecte || admin;
+  $("vue-admin").hidden = !admin;
   $("session").hidden = !connecte;
 }
+
+// ---------- espace administrateur ----------
+function tableau(zone, entetes, lignes, vide) {
+  zone.replaceChildren();
+  if (lignes.length === 0) {
+    const p = document.createElement("p");
+    p.className = "vide"; p.textContent = vide; zone.append(p); return;
+  }
+  const table = document.createElement("table");
+  table.className = "g";
+  const tete = table.createTHead().insertRow();
+  for (const h of entetes) { const th = document.createElement("th"); th.textContent = h; tete.append(th); }
+  const corps = table.createTBody();
+  for (const ligne of lignes) {
+    const tr = corps.insertRow();
+    for (const c of ligne) {
+      const td = tr.insertCell();
+      if (c instanceof Node) td.append(c); else td.textContent = c;
+    }
+  }
+  zone.append(table);
+}
+function bouton(texte, action) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "secondaire petit"; b.textContent = texte;
+  b.addEventListener("click", action);
+  return b;
+}
+const STATUT_COMPTE = { A: "actif", G: "gelé", C: "clos" };
+let adminComptes = [];
+
+async function chargerAdmin() {
+  const [rc, rk] = await Promise.all([appel("admin-clients", {}), appel("admin-comptes", {})]);
+  if (!rc.ok) { erreur(rc.statut); return; }
+  if (!rk.ok) { erreur(rk.statut); return; }
+  adminComptes = rk.comptes;
+  tableau($("a-clients"), ["Id", "Nom", "Rôle", "Statut", "Comptes", ""],
+    rc.clients.map((c) => {
+      const nb = adminComptes.filter((k) => k.client === c.id).length;
+      const etat = document.createElement("span");
+      etat.className = "badge" + (c.statut === "B" ? " ko" : "");
+      etat.textContent = c.statut === "B" ? "bloqué" : "actif";
+      let action = "";
+      if (c.role === "C") {
+        action = c.statut === "B"
+          ? bouton("Débloquer", () => changerBlocage("admin-debloquer", c.id, "Client débloqué."))
+          : bouton("Bloquer", () => changerBlocage("admin-bloquer", c.id, "Client bloqué."));
+      }
+      return [String(c.id), c.nom, c.role === "A" ? "admin" : "client", etat, String(nb), action];
+    }), "Aucun client.");
+  tableau($("a-comptes"), ["Compte", "Client", "Type", "Solde", "Plafond", "Découvert", "Statut", ""],
+    adminComptes.map((k) => {
+      const solde = document.createElement("span");
+      solde.textContent = euro(k.solde) + " €";
+      if (k.solde < 0) solde.className = "negatif";
+      return [k.num, String(k.client), k.type === "E" ? "épargne" : "courant", solde,
+        euro(k.plafond), euro(k.decouvert), STATUT_COMPTE[k.statut] || k.statut,
+        bouton("Modifier", () => ouvrirModif(k))];
+    }), "Aucun compte.");
+  const ra = await appel("admin-alertes", {});
+  if (!ra.ok) { erreur(ra.statut); return; }
+  $("al-total").textContent = ra.total > ra.alertes.length
+    ? "· " + ra.alertes.length + " dernières sur " + ra.total : "";
+  tableau($("a-alertes"), ["Date", "Règle", "Client", "Compte", "Montant", "Détail"],
+    ra.alertes.slice().reverse().map((a) => [
+      a.date.slice(6) + "/" + a.date.slice(4, 6) + "/" + a.date.slice(0, 4) + " " + a.heure.slice(0, 2) + ":" + a.heure.slice(2, 4),
+      a.regle, String(a.client), /^0+$/.test(a.compte) ? "—" : a.compte,
+      a.montant > 0 ? euro(a.montant) : "—", a.detail.toLowerCase()
+    ]), "Aucune alerte.");
+}
+
+async function changerBlocage(commande, client, texte) {
+  message("");
+  const r = await appel(commande, { client: String(client) });
+  if (!r.ok) { erreur(r.statut); return; }
+  message(texte, true);
+  chargerAdmin();
+}
+
+let modifNum = null;
+function ouvrirModif(k) {
+  modifNum = k.num;
+  $("m-num").textContent = "· " + k.num + (k.type === "E" ? " (épargne)" : " (courant)");
+  $("m-plafond").value = k.plafond.toFixed(2);
+  $("m-decouvert").value = k.decouvert.toFixed(2);
+  $("m-decouvert").disabled = k.type === "E";
+  $("m-statut").value = k.statut;
+  $("a-modif").hidden = false;
+  $("m-plafond").focus();
+}
+$("m-annuler").addEventListener("click", () => { $("a-modif").hidden = true; modifNum = null; });
+$("form-modif").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message("");
+  const b = $("m-valider");
+  b.disabled = true;
+  const r = await appel("admin-modifier", {
+    compte: modifNum, plafond: $("m-plafond").value.trim(),
+    decouvert: $("m-decouvert").disabled ? "0" : $("m-decouvert").value.trim(),
+    statut: $("m-statut").value
+  });
+  b.disabled = false;
+  if (!r.ok) { erreur(r.statut); return; }
+  message("Compte " + modifNum + " modifié.", true);
+  $("a-modif").hidden = true; modifNum = null;
+  chargerAdmin();
+});
+
+// le lancement du traitement demande une seconde validation (pas de boîte de dialogue)
+let batchArme = false;
+function armerBatch(arme) {
+  batchArme = arme;
+  $("b-lancer").textContent = arme ? "Confirmer le lancement" : "Lancer le traitement";
+  $("b-annuler").hidden = !arme;
+}
+$("b-annuler").addEventListener("click", () => armerBatch(false));
+$("b-lancer").addEventListener("click", async () => {
+  message("");
+  if (!batchArme) { armerBatch(true); return; }
+  armerBatch(false);
+  $("b-lancer").disabled = true;
+  const r = await appel("admin-batch", { periode: $("b-periode").value.trim() });
+  $("b-lancer").disabled = false;
+  $("b-resultat").replaceChildren();
+  if (!r.ok) { erreur(r.statut); return; }
+  message("Traitement de la période " + r.periode + " terminé.", true);
+  tableau($("b-resultat"), ["Comptes actifs", "Intérêts", "Total intérêts", "Frais", "Total frais", "Frais refusés", "Anomalies"],
+    [[String(r.actifs), String(r.interets), euro(r.total_interets) + " €", String(r.frais),
+      euro(r.total_frais) + " €", String(r.refuses), String(r.anomalies)]], "");
+  chargerAdmin();
+});
 
 $("form-connexion").addEventListener("submit", async (e) => {
   e.preventDefault();
   message("");
   session = { id: $("c-id").value.trim(), pin: $("c-pin").value.trim(), nom: "" };
-  const r = await appel("connexion", {});
+  let r = await appel("connexion", {});
+  // 78 = identifiants valides mais rôle administrateur : on bascule sur l'espace admin
+  if (!r.ok && r.statut === "78") {
+    r = await appel("admin-connexion", {});
+    if (r.ok) session.admin = true;
+  }
   $("c-pin").value = "";
   if (!r.ok) { session = null; erreur(r.statut); return; }
   session.nom = r.nom;
-  $("bonjour").textContent = "Bonjour " + r.nom + " ";
+  $("bonjour").textContent = (session.admin ? "Administrateur " : "Bonjour ") + r.nom + " ";
   afficher(true);
+  if (session.admin) { chargerAdmin(); return; }
   choisirOperation("depot");
   if (await chargerComptes()) chargerHistorique();
 });
@@ -336,7 +534,8 @@ $("form-connexion").addEventListener("submit", async (e) => {
 const DEMO = [
   { id: "2", pin: "4321", nom: "Alice", note: "2 comptes courants, 1 épargne, historique" },
   { id: "3", pin: "5555", nom: "Bob", note: "découvert autorisé, solde négatif" },
-  { id: "4", pin: "2468", nom: "Clara", note: "client bloqué (refus à la connexion)" }
+  { id: "4", pin: "2468", nom: "Clara", note: "client bloqué (refus à la connexion)" },
+  { id: "1", pin: "1234", nom: "Admin", note: "espace administrateur : clients, comptes, alertes, batch" }
 ];
 fetch("/api/config").then((r) => r.json()).then((c) => {
   if (!c.demo) return;
@@ -390,7 +589,8 @@ $("form-ouvrir").addEventListener("submit", async (e) => {
 });
 
 $("quitter").addEventListener("click", () => {
-  session = null; comptes = []; compteCourant = null;
+  session = null; comptes = []; compteCourant = null; adminComptes = [];
+  $("a-modif").hidden = true; $("b-resultat").replaceChildren(); armerBatch(false);
   afficher(false); message("Déconnecté.", true);
 });
 

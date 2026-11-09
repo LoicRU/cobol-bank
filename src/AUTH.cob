@@ -9,6 +9,8 @@
 *>     "D" debloquer         (LK-CLI-ID) ; l'appelant verifie que l'utilisateur
 *>                           est administrateur
 *>     "P" changer le PIN    (LK-CLI-ID, ancien LK-PIN, nouveau LK-NEW-PIN)
+*>     "B" bloquer           (LK-CLI-ID) ; l'appelant verifie que l'utilisateur
+*>                           est administrateur (comme pour "D")
 *>     "N" inscription libre (LK-CLI-NOM, LK-PIN) : l'identifiant est attribue
 *>                           (renvoye dans LK-CLI-ID), role toujours client
 *>   LK-PIN, LK-NEW-PIN : 4 a 6 chiffres, cadres a gauche, complete d'espaces
@@ -131,6 +133,7 @@ MAIN-PARA.
         WHEN "D" PERFORM DEBLOQUER
         WHEN "P" PERFORM CHANGER-PIN
         WHEN "N" PERFORM INSCRIRE-CLIENT
+        WHEN "B" PERFORM BLOQUER
         WHEN OTHER MOVE "99" TO LK-STATUS
     END-EVALUATE
 
@@ -300,6 +303,16 @@ DEBLOQUER.
     IF WS-FS = "00"
         MOVE 0 TO CLI-ECHECS
         MOVE "A" TO CLI-STATUT
+        REWRITE CLIENT-REC
+    END-IF
+    MOVE WS-FS TO LK-STATUS.
+
+*> Blocage par un administrateur (l'appelant verifie le role)
+BLOQUER.
+    MOVE LK-CLI-ID TO CLI-ID
+    READ F-CLIENTS KEY IS CLI-ID
+    IF WS-FS = "00"
+        MOVE "B" TO CLI-STATUT
         REWRITE CLIENT-REC
     END-IF
     MOVE WS-FS TO LK-STATUS.

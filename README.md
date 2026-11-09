@@ -12,7 +12,7 @@ Mini core-banking en **GnuCOBOL** : fichiers indexés, menu console, authentific
 - **Fraude** : plafond journalier de sorties (refus) et montant anormal par rapport à la moyenne du compte (alerte), journal d'alertes consultable par l'administrateur.
 - **Batch mensuel** : intérêts (taux propre à l'épargne) et frais de tenue (comptes courants seulement), rejouable sans doublon (une période déjà traitée est refusée).
 - **Inscription et ouverture de comptes en libre-service** : un visiteur crée son propre client (nom + PIN), puis chaque client s'ouvre jusqu'à 5 comptes (courant ou épargne), en console comme sur le web.
-- **Interface web** (côté client) : inscription, ouverture de compte, consultation des comptes, dépôt, retrait, virement et historique dans le navigateur, via un petit serveur Python qui appelle le COBOL.
+- **Interface web** (client et administrateur) : inscription, ouverture de compte, consultation des comptes, dépôt, retrait, virement et historique dans le navigateur ; l'administrateur y gère clients, comptes, alertes et batch. Un petit serveur Python appelle le COBOL.
 - **Relevés** : fichier texte formaté ou export CSV sur une période, avec contrôle de cohérence (solde initial + crédits − débits = solde final).
 
 ## Installation
@@ -188,7 +188,7 @@ make web                 # compile bin/api puis lance le serveur sur le port 808
 python3 web/server.py 9000   # autre port
 ```
 
-Ouvrir `http://127.0.0.1:8080`, créer son compte client (« Créer mon compte client » : nom et PIN, l'identifiant attribué s'affiche) puis se connecter avec l'identifiant numérique et le PIN d'un **client** (les administrateurs restent en console, code 78). Pour essayer sur les données de démonstration :
+Ouvrir `http://127.0.0.1:8080`, créer son compte client (« Créer mon compte client » : nom et PIN, l'identifiant attribué s'affiche) puis se connecter avec l'identifiant numérique et le PIN. Un **client** arrive sur ses comptes ; un **administrateur** arrive sur son tableau de bord (voir plus bas). Pour essayer sur les données de démonstration :
 
 ```
 make web-demo                 # recrée demo/ à chaque lancement, puis lance le site dessus
@@ -201,7 +201,11 @@ Fonctionnement : `web/index.html` appelle `POST /api/<commande>` sur `web/server
 
 > Usage **local uniquement** : pas de HTTPS ni de session, le PIN circule en clair entre le navigateur et le serveur. Ne pas exposer ce serveur sur un réseau.
 
-Commandes de `bin/api` : `inscription`, `connexion`, `comptes`, `ouvrir`, `depot`, `retrait`, `virement`, `historique` (200 dernières opérations). Codes ajoutés : 74 (compte d'un autre client), 77 (commande inconnue), 78 (rôle non autorisé), 79 (paramètre invalide).
+Commandes client de `bin/api` : `inscription`, `connexion`, `comptes`, `ouvrir`, `depot`, `retrait`, `virement`, `historique` (200 dernières opérations). Commandes administrateur (préfixe `admin-`) : `admin-connexion`, `admin-clients`, `admin-comptes`, `admin-alertes` (200 dernières), `admin-bloquer`, `admin-debloquer`, `admin-modifier` (plafond, découvert, statut), `admin-batch` (période AAAAMM, mois courant par défaut). Codes ajoutés : 74 (compte d'un autre client), 77 (commande inconnue), 78 (rôle non autorisé : commande client refusée à un administrateur et inversement), 79 (paramètre invalide).
+
+### Espace administrateur (web)
+
+Se connecter avec un compte administrateur (identifiant 1 sur la démo, PIN 1234) ouvre le tableau de bord : liste des clients avec blocage / déblocage (un administrateur ne peut pas se bloquer lui-même), liste de tous les comptes avec modification du plafond, du découvert (courant seulement) et du statut, alertes de fraude, et traitement mensuel. Le traitement mensuel demande une seconde validation (« Confirmer le lancement ») et une période ne se traite qu'une fois (code 71). Le serveur reste sur `127.0.0.1` et le rôle est revérifié par le COBOL à chaque requête : il n'y a ni session ni cookie, donc rien à voler ni à falsifier côté navigateur.
 
 ## Menus
 
@@ -261,7 +265,7 @@ tests/        suites de tests
 | `FRAUDE` | plafond journalier, montant anormal, alertes d'échecs de PIN | 00, 96 (plafond), 97 (alerte seule) |
 | `RELEVE` | relevé de compte (texte ou CSV) sur une période | 00, 23, 73, 74, 75 (incohérent), 76 (format inconnu) |
 | `BATCH-INT` | intérêts et frais mensuels | 00, 71 (déjà traitée), 72 (interrompue), 73 |
-| `API` | une commande client en JSON pour l'interface web (utilise AUTH, COMPTE) | 00 et codes d'AUTH / COMPTE, 74, 77, 78, 79 |
+| `API` | une commande client ou administrateur en JSON pour l'interface web (utilise AUTH, COMPTE, BATCH-INT) | 00 et codes d'AUTH / COMPTE, 74, 77, 78, 79 |
 | `PARAM` | lecture et validation de la configuration | 00, 61, 62, 63 |
 
 Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexés ; `TRANSACTIONS.dat` et `ALERTES.dat` sont des journaux en ajout seul.
@@ -311,7 +315,7 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 | `test_epargne` | batch : intérêts d'épargne, pas de frais sur l'épargne, frais limités par le découvert |
 | `test_trx` | numérotation de l'historique |
 | `test_menu.sh` | scénario complet par saisies redirigées (client, admin, blocage, batch, connexion par nom) |
-| `test_web.sh` | `bin/api` et serveur HTTP : inscription, ouverture de compte, connexion, comptes, opérations, refus, injections de paramètres, PIN absent des logs |
+| `test_web.sh` | `bin/api` et serveur HTTP : inscription, ouverture de compte, connexion, comptes, opérations, commandes administrateur (rôles, blocage, modification, batch), refus, injections de paramètres, PIN absent des logs |
 | `test_demo.sh` | le jeu de démonstration produit les soldes, alertes et relevés annoncés |
 
 ## Limites connues

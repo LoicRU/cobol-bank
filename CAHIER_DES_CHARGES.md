@@ -41,6 +41,7 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - Jeu de données de test et tests de bout en bout.
 - *(V1.1)* Export CSV des relevés, connexion par identifiant ou par nom, jeu de démonstration (`make demo`).
 - *(V1.1)* Interface web locale côté client (consultation, dépôt, retrait, virement, historique) appelant les programmes COBOL.
+- *(V1.1)* Espace administrateur web : clients (blocage / déblocage), comptes (plafond, découvert, statut), alertes, traitement mensuel.
 - *(V1.1)* Inscription libre et ouverture de comptes en libre-service (console et web).
 - *(V1.1)* Découvert autorisé par compte courant et comptes épargne (taux propre, retrait en espèces interdit).
 
@@ -281,7 +282,7 @@ intérêt = solde × taux annuel ÷ 12      (arrondi au centime, solde > 0 uniqu
 
 ## 10. Évolutions possibles (hors V1)
 
-- Interface web d'administration, HTTPS et sessions, API REST documentée.
+- HTTPS et sessions, API REST documentée.
 - Virements programmés.
 - Règles de fraude plus riches (géolocalisation simulée, fréquence, horaires).
 - Migration du stockage vers une base SQL.

@@ -11,11 +11,11 @@ bin/banque: src/BANQUE.cob $(MODULES) $(wildcard copybooks/*.cpy)
 	$(COBC) -x $(FLAGS) -o $@ src/BANQUE.cob $(MODULES)
 
 bin/api: src/API.cob $(MODULES) $(wildcard copybooks/*.cpy)
-	$(COBC) -x $(FLAGS) -o $@ src/API.cob $(filter-out src/RELEVE.cob src/BATCH-INT.cob,$(MODULES))
+	$(COBC) -x $(FLAGS) -o $@ src/API.cob $(filter-out src/RELEVE.cob,$(MODULES))
 
 web: bin/api
 	python3 web/server.py
-	
+
 web-demo: bin/banque bin/api
 	sh tests/demo.sh web
 

@@ -32,7 +32,17 @@ COMMANDES = {
     "historique": ["compte"],
     "ouvrir": ["type"],
     "inscription": ["nom"],   # sans authentification : pas d'identifiant
+    # commandes administrateur (role verifie par le COBOL)
+    "admin-connexion": [],
+    "admin-clients": [],
+    "admin-comptes": [],
+    "admin-alertes": [],
+    "admin-bloquer": ["client"],
+    "admin-debloquer": ["client"],
+    "admin-modifier": ["compte", "plafond", "decouvert", "statut"],
+    "admin-batch": ["periode"],
 }
+OPTIONNELS = {"periode"}   # parametre qui peut etre omis
 RE_ID = re.compile(r"^[0-9]{1,6}$")
 RE_PIN = re.compile(r"^[0-9]{4,6}$")
 RE_COMPTE = re.compile(r"^[0-9]{1,10}$")
@@ -41,6 +51,12 @@ RE_TYPE = re.compile(r"[CE]")
 # ni sous-lignes au debut/fin ; 30 octets UTF-8 au plus (champ COBOL X(30))
 RE_NOM = re.compile(r"[^\W_](?:[\w '\-]*[^\W_])?")
 RE_MONTANT = re.compile(r"^[0-9]{1,9}([.,][0-9]{1,2})?$")
+RE_MONTANT7 = re.compile(r"^[0-9]{1,7}([.,][0-9]{1,2})?$")   # plafond, decouvert
+RE_STATUT = re.compile(r"[AGC]")
+RE_PERIODE = re.compile(r"^[0-9]{6}$")
+MOTIFS = {"montant": RE_MONTANT, "plafond": RE_MONTANT7, "decouvert": RE_MONTANT7,
+          "statut": RE_STATUT, "periode": RE_PERIODE, "type": RE_TYPE,
+          "client": RE_ID}
 
 
 def valider(commande, corps):
@@ -58,17 +74,16 @@ def valider(commande, corps):
     morceaux = [commande, ident, pin]
     for nom in COMMANDES[commande]:
         valeur = str(corps.get(nom, ""))
+        if nom in OPTIONNELS and valeur == "":
+            continue
         if nom == "nom":
             # le nom est valide ici ; les espaces sont codes "_" pour le COBOL
             if "_" in valeur or not RE_NOM.fullmatch(valeur) \
                     or len(valeur.encode("utf-8")) > 30:
                 return None
             valeur = valeur.replace(" ", "_")
-        elif nom == "type":
-            if not RE_TYPE.fullmatch(valeur):
-                return None
         else:
-            motif = RE_MONTANT if nom == "montant" else RE_COMPTE
+            motif = MOTIFS.get(nom, RE_COMPTE)
             if not motif.fullmatch(valeur):
                 return None
         morceaux.append(valeur)

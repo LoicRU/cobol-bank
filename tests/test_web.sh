@@ -51,6 +51,35 @@ verifie "API : ouverture epargne" "$(api 'ouvrir 5 1357 E')" '"num":"1000000006"
 verifie "API : type invalide (87)" "$(api 'ouvrir 5 1357 X')" '"statut":"87"'
 verifie "API : historique de l'ouverture" "$(api 'historique 5 1357 1000000006')" '"motif":"OUVERTURE DE COMPTE"'
 
+echo "API : commandes administrateur"
+verifie "admin-connexion" "$(api 'admin-connexion 1 1234')" '"nom":"Admin"'
+verifie "admin-connexion : mauvais PIN (81)" "$(api 'admin-connexion 1 0000')" '"statut":"81"'
+verifie "admin-connexion refusee a un client (78)" "$(api 'admin-connexion 2 4321')" '"statut":"78"'
+verifie "admin-clients refuse a un client (78)" "$(api 'admin-clients 2 4321')" '"statut":"78"'
+verifie "admin-batch refuse a un client (78)" "$(api 'admin-batch 2 4321 202612')" '"statut":"78"'
+verifie "commande client refusee a l'admin (78)" "$(api 'comptes 1 1234')" '"statut":"78"'
+verifie "admin-clients" "$(api 'admin-clients 1 1234')" '"nom":"Alice","role":"C","statut":"A"'
+verifie "admin-clients : Clara bloquee" "$(api 'admin-clients 1 1234')" '"nom":"Clara","role":"C","statut":"B"'
+verifie "admin-comptes : tous les clients" "$(api 'admin-comptes 1 1234')" '"statut":"A","client":3'
+verifie "admin-alertes" "$(api 'admin-alertes 1 1234')" '"regle":"PLAFOND_JOUR"'
+verifie "admin-bloquer" "$(api 'admin-bloquer 1 1234 5')" '"ok":true'
+verifie "client bloque : connexion refusee (82)" "$(api 'connexion 5 1357')" '"statut":"82"'
+verifie "admin-debloquer" "$(api 'admin-debloquer 1 1234 5')" '"ok":true'
+verifie "client debloque : connexion" "$(api 'connexion 5 1357')" '"nom":"Jean-Pierre'
+verifie "admin ne se bloque pas lui-meme (79)" "$(api 'admin-bloquer 1 1234 1')" '"statut":"79"'
+verifie "admin-bloquer : client inconnu (23)" "$(api 'admin-bloquer 1 1234 99')" '"statut":"23"'
+verifie "admin-bloquer : identifiant invalide (79)" "$(api 'admin-bloquer 1 1234 abc')" '"statut":"79"'
+verifie "admin-modifier" "$(api 'admin-modifier 1 1234 1000000003 700 250,50 A')" '"ok":true'
+verifie "admin-modifier : effet visible" "$(api 'comptes 3 5555')" '"plafond":700.00,"decouvert":250.50'
+verifie "admin-modifier : gel" "$(api 'admin-modifier 1 1234 1000000004 0 0 G')" '"ok":true'
+verifie "admin-modifier : gel visible" "$(api 'admin-comptes 1 1234')" '"num":"1000000004","solde":0.00,"plafond":0.00,"decouvert":0.00,"type":"C","statut":"G"'
+verifie "admin-modifier : decouvert sur epargne (79)" "$(api 'admin-modifier 1 1234 1000000005 0 50 A')" '"statut":"79"'
+verifie "admin-modifier : statut invalide (79)" "$(api 'admin-modifier 1 1234 1000000003 0 0 X')" '"statut":"79"'
+verifie "admin-modifier : montant invalide (79)" "$(api 'admin-modifier 1 1234 1000000003 abc 0 A')" '"statut":"79"'
+verifie "admin-modifier : plafond negatif (79)" "$(api 'admin-modifier 1 1234 1000000003 -5 0 A')" '"statut":"79"'
+verifie "admin-modifier : compte inconnu (23)" "$(api 'admin-modifier 1 1234 1999999999 0 0 A')" '"statut":"23"'
+verifie "admin-batch : periode invalide (73)" "$(api 'admin-batch 1 1234 13')" '"statut":"73"'
+
 echo "WEB : serveur HTTP"
 python3 web/server.py $PORT > $T/WEB_serveur.log 2>&1 &
 PID=$!
@@ -83,7 +112,22 @@ post ouvrir '{"id":"6","pin":"2468","type":"C"}' > /dev/null
 post ouvrir '{"id":"6","pin":"2468","type":"E"}' > /dev/null
 post ouvrir '{"id":"6","pin":"2468","type":"C"}' > /dev/null
 verifie "ouverture : 6e compte refuse (88)" "$(post ouvrir '{"id":"6","pin":"2468","type":"C"}')" '"statut": "88"'
-absent=$(grep -c "5555" $T/WEB_serveur.log)
+verifie "admin via HTTP : connexion" "$(post admin-connexion '{"id":"1","pin":"1234"}')" '"nom": "Admin"'
+verifie "admin via HTTP : refuse a un client (78)" "$(post admin-clients '{"id":"3","pin":"5555"}')" '"statut": "78"'
+verifie "admin via HTTP : clients" "$(post admin-clients '{"id":"1","pin":"1234"}')" '"nom": "Alice"'
+verifie "admin via HTTP : comptes" "$(post admin-comptes '{"id":"1","pin":"1234"}')" '"client": 3'
+verifie "admin via HTTP : alertes" "$(post admin-alertes '{"id":"1","pin":"1234"}')" '"alertes": \['
+verifie "admin via HTTP : bloquer" "$(post admin-bloquer '{"id":"1","pin":"1234","client":"6"}')" '"ok": true'
+verifie "admin via HTTP : client bloque (82)" "$(post connexion '{"id":"6","pin":"2468"}')" '"statut": "82"'
+verifie "admin via HTTP : debloquer" "$(post admin-debloquer '{"id":"1","pin":"1234","client":"6"}')" '"ok": true'
+verifie "admin via HTTP : modifier" "$(post admin-modifier '{"id":"1","pin":"1234","compte":"1000000003","plafond":"500","decouvert":"200","statut":"A"}')" '"ok": true'
+verifie "admin via HTTP : statut invalide refuse" "$(post admin-modifier '{"id":"1","pin":"1234","compte":"1000000003","plafond":"500","decouvert":"200","statut":"X"}')" '"statut": "79"'
+verifie "admin via HTTP : injection refusee" "$(post admin-modifier '{"id":"1","pin":"1234","compte":"1000000003","plafond":"5 6","decouvert":"200","statut":"A"}')" '"statut": "79"'
+verifie "admin via HTTP : client non numerique refuse" "$(post admin-bloquer '{"id":"1","pin":"1234","client":"abc"}')" '"statut": "79"'
+verifie "admin via HTTP : periode invalide refusee" "$(post admin-batch '{"id":"1","pin":"1234","periode":"12"}')" '"statut": "79"'
+verifie "admin via HTTP : batch" "$(post admin-batch '{"id":"1","pin":"1234","periode":"202612"}')" '"periode": "202612"'
+verifie "admin via HTTP : batch deja traite (71)" "$(post admin-batch '{"id":"1","pin":"1234","periode":"202612"}')" '"statut": "71"'
+absent=$(grep -c "5555\|1234" $T/WEB_serveur.log)
 if [ "$absent" -eq 0 ]; then echo "  PASS le PIN n'apparait pas dans les logs"
 else echo "  FAIL le PIN apparait dans les logs"; NB_ECHECS=$((NB_ECHECS + 1)); fi
 kill $PID 2>/dev/null
