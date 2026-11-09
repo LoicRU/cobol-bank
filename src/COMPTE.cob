@@ -13,6 +13,7 @@
 *>     91 montant invalide (0)    92 compte non actif
 *>     93 solde insuffisant       94 depassement de capacite du solde
 *>     95 virement vers le meme compte
+*>     96 plafond journalier depasse (controle FRAUDE, retrait et virement)
 *>     98 operation faite mais ligne d'historique non ecrite
 *>     autre : FILE STATUS d'une erreur d'entree/sortie
 *> D, R et V ecrivent une ligne d'historique (acceptee ou refusee) via TRX.
@@ -45,6 +46,11 @@ WORKING-STORAGE SECTION.
 01 WS-LU          PIC X.
 01 WS-LU-DST      PIC X.
 01 WS-TRX-STATUS  PIC XX.
+01 WS-FRD-ACTION  PIC X VALUE "C".
+01 WS-FRD-CPT     PIC 9(10).
+01 WS-FRD-CLI     PIC 9(6).
+01 WS-FRD-PLAFOND PIC 9(7)V99.
+01 WS-FRD-STATUS  PIC XX.
 *> copies de travail pour le virement : source, destination, source d'origine
 COPY "COMPTE.cpy" REPLACING LEADING ==CPT-== BY ==SRC-==
                             ==COMPTE-REC== BY ==SRC-REC==.
@@ -146,6 +152,14 @@ OPERATION.
             MOVE "SOLDE INSUFFISANT" TO WS-MOTIF
     END-EVALUATE
 
+    *> un retrait est une sortie d'argent : controle de fraude en dernier
+    IF LK-STATUS = "00" AND LK-ACTION = "R"
+        MOVE LK-CPT-NUM TO WS-FRD-CPT
+        MOVE CPT-ID-CLIENT TO WS-FRD-CLI
+        MOVE CPT-PLAFOND TO WS-FRD-PLAFOND
+        PERFORM CONTROLE-FRAUDE
+    END-IF
+
     IF LK-STATUS = "00"
         IF LK-ACTION = "D"
             ADD LK-MONTANT TO CPT-SOLDE
@@ -222,6 +236,14 @@ VIREMENT.
         END-ADD
     END-IF
 
+    *> le virement est une sortie pour la source : controle de fraude
+    IF LK-STATUS = "00"
+        MOVE LK-CPT-NUM TO WS-FRD-CPT
+        MOVE SRC-ID-CLIENT TO WS-FRD-CLI
+        MOVE SRC-PLAFOND TO WS-FRD-PLAFOND
+        PERFORM CONTROLE-FRAUDE
+    END-IF
+
     IF LK-STATUS = "00"
         SUBTRACT LK-MONTANT FROM SRC-SOLDE
         PERFORM ECRIRE-VIREMENT
@@ -252,6 +274,25 @@ ECRIRE-VIREMENT.
             MOVE ORG-REC TO SRC-REC
         END-IF
     END-IF.
+
+*> Controle de fraude sur une sortie (WS-FRD-CPT / CLI / PLAFOND renseignes).
+*> 96 : plafond depasse, refus ; 97 : alerte ecrite mais autorise ;
+*> toute autre erreur (fichier) : refus par prudence.
+CONTROLE-FRAUDE.
+    CALL "FRAUDE" USING WS-FRD-ACTION WS-FRD-CPT WS-FRD-CLI LK-MONTANT
+                        WS-FRD-PLAFOND WS-FRD-STATUS
+    EVALUATE WS-FRD-STATUS
+        WHEN "00"
+            CONTINUE
+        WHEN "97"
+            CONTINUE
+        WHEN "96"
+            MOVE "96" TO LK-STATUS
+            MOVE "PLAFOND JOURNALIER DEPASSE" TO WS-MOTIF
+        WHEN OTHER
+            MOVE WS-FRD-STATUS TO LK-STATUS
+            MOVE "ERREUR CONTROLE FRAUDE" TO WS-MOTIF
+    END-EVALUATE.
 
 JOURNALISER.
     INITIALIZE TRX-REC
