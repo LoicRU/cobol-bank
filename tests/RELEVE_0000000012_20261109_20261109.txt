@@ -1,0 +1,18 @@
+RELEVE DE COMPTE
+Titulaire : CLARA
+Compte    : 0000000012
+Periode   : 2026-11-09 au 2026-11-09
+Edite le  : 2026-11-09
+
+Solde initial :        100.00
+
+Date        Heure  Operation         Compte lie  Debit         Credit        Solde
+----------------------------------------------------------------------------------------------------
+2026-11-09  15:25  RETRAIT                             300.00                      -200.00
+2026-11-09  15:25  DEPOT                                              50.00        -150.00
+----------------------------------------------------------------------------------------------------
+Solde final :       -150.00
+Total debits  :       300.00
+Total credits :        50.00
+Operations    :       2
+Verification : OK

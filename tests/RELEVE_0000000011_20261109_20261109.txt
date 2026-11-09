@@ -1,0 +1,19 @@
+RELEVE DE COMPTE
+Titulaire : BOB
+Compte    : 0000000011
+Periode   : 2026-11-09 au 2026-11-09
+Edite le  : 2026-11-09
+
+Solde initial :         50.00
+
+Date        Heure  Operation         Compte lie  Debit         Credit        Solde
+----------------------------------------------------------------------------------------------------
+2026-11-09  15:25  VIREMENT RECU     0000000010                      100.00         150.00
+2026-11-09  15:25  INTERETS                                            0.19         150.19
+2026-11-09  15:25  FRAIS DE TENUE                        2.00                       148.19
+----------------------------------------------------------------------------------------------------
+Solde final :        148.19
+Total debits  :         2.00
+Total credits :       100.19
+Operations    :       3
+Verification : OK

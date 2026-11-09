@@ -1,0 +1,16 @@
+RELEVE DE COMPTE
+Titulaire : ALICE
+Compte    : 0000000001
+Periode   : 2026-12-01 au 2026-12-31
+Edite le  : 2026-11-09
+
+Solde initial :        499.25
+
+Date        Heure  Operation         Compte lie  Debit         Credit        Solde
+----------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
+Solde final :        499.25
+Total debits  :         0.00
+Total credits :         0.00
+Operations    :       0
+Verification : OK
