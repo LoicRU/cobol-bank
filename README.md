@@ -11,7 +11,8 @@ Mini core-banking en **GnuCOBOL** : fichiers indexés, menu console, authentific
 - **Opérations** : dépôt, retrait, virement atomique ; chaque tentative (acceptée ou refusée, avec motif) est écrite dans l'historique.
 - **Fraude** : plafond journalier de sorties (refus) et montant anormal par rapport à la moyenne du compte (alerte), journal d'alertes consultable par l'administrateur.
 - **Batch mensuel** : intérêts (taux propre à l'épargne) et frais de tenue (comptes courants seulement), rejouable sans doublon (une période déjà traitée est refusée).
-- **Interface web** (côté client) : consultation des comptes, dépôt, retrait, virement et historique dans le navigateur, via un petit serveur Python qui appelle le COBOL.
+- **Inscription et ouverture de comptes en libre-service** : un visiteur crée son propre client (nom + PIN), puis chaque client s'ouvre jusqu'à 5 comptes (courant ou épargne), en console comme sur le web.
+- **Interface web** (côté client) : inscription, ouverture de compte, consultation des comptes, dépôt, retrait, virement et historique dans le navigateur, via un petit serveur Python qui appelle le COBOL.
 - **Relevés** : fichier texte formaté ou export CSV sur une période, avec contrôle de cohérence (solde initial + crédits − débits = solde final).
 
 ## Installation
@@ -39,7 +40,7 @@ Parcours d'essai :
 4. Déconnexion `0`, reconnexion avec `2` / 4321, dépôt `2`, retrait `3`, virement `4`.
 5. Relevé `6` : dates de début et de fin au format `AAAAMMJJ`, fichier écrit dans `reports/`.
 
-> **Mise à jour depuis la V1.0** : le format des comptes et de l'historique a changé (type de compte, découvert, soldes signés). Supprimer les anciens fichiers (`rm -f data/*.dat`) puis `make clean && make`.
+> **Mise à jour depuis la V1.0** : le format des comptes, des clients et de l'historique a changé (type de compte, découvert, soldes signés, date d'inscription). Supprimer les anciens fichiers (`rm -f data/*.dat`) puis `make clean && make`.
 
 ## Démo
 
@@ -106,6 +107,7 @@ Session réelle sur les données de `make demo` (Alice, identifiant 2, PIN 4321,
 ```
 === COBOL-BANK ===
 1. Connexion
+2. Creer mon compte client
 0. Quitter
 Choix : 1
 Identifiant ou nom : 2
@@ -120,6 +122,7 @@ Bonjour Alice
 5. Historique d'un compte
 6. Releve de compte
 7. Changer mon PIN
+8. Ouvrir un compte
 0. Deconnexion
 Choix : 1
 Compte 1000000001  solde       1078.85  statut A  courant
@@ -157,11 +160,11 @@ Operation effectuee.
 [menu client]
 Choix : 5
 Numero de compte : 1000000002
-2026-11-09 15:11 D       300.00 A                              
-2026-11-09 15:11 V        50.00 A                              
-2026-11-09 15:11 I         0.44 A INTERETS 202611              
-2026-11-09 15:11 F         2.00 A FRAIS DE TENUE 202611        
-2026-11-09 15:11 V        50.00 A                              
+2026-11-09 15:23 D       300.00 A                              
+2026-11-09 15:23 V        50.00 A                              
+2026-11-09 15:23 I         0.44 A INTERETS 202611              
+2026-11-09 15:23 F         2.00 A FRAIS DE TENUE 202611        
+2026-11-09 15:23 V        50.00 A                              
 
 [menu client]
 Choix : 0
@@ -169,6 +172,7 @@ Deconnecte.
 
 === COBOL-BANK ===
 1. Connexion
+2. Creer mon compte client
 0. Quitter
 Choix : 0
 Au revoir.
@@ -183,7 +187,7 @@ make web                 # compile bin/api puis lance le serveur sur le port 808
 python3 web/server.py 9000   # autre port
 ```
 
-Ouvrir `http://127.0.0.1:8080`, se connecter avec l'identifiant numérique et le PIN d'un **client** (les administrateurs restent en console, code 78). Pour essayer sur les données de démonstration, lancer d'abord `make demo` puis :
+Ouvrir `http://127.0.0.1:8080`, créer son compte client (« Créer mon compte client » : nom et PIN, l'identifiant attribué s'affiche) puis se connecter avec l'identifiant numérique et le PIN d'un **client** (les administrateurs restent en console, code 78). Pour essayer sur les données de démonstration, lancer d'abord `make demo` puis :
 
 ```
 CLIENTS_FILE=demo/CLIENTS.dat COMPTES_FILE=demo/COMPTES.dat TRX_FILE=demo/TRANSACTIONS.dat ALERTES_FILE=demo/ALERTES.dat python3 web/server.py
@@ -193,7 +197,7 @@ Fonctionnement : `web/index.html` appelle `POST /api/<commande>` sur `web/server
 
 > Usage **local uniquement** : pas de HTTPS ni de session, le PIN circule en clair entre le navigateur et le serveur. Ne pas exposer ce serveur sur un réseau.
 
-Commandes de `bin/api` : `connexion`, `comptes`, `depot`, `retrait`, `virement`, `historique` (200 dernières opérations). Codes ajoutés : 74 (compte d'un autre client), 77 (commande inconnue), 78 (rôle non autorisé), 79 (paramètre invalide).
+Commandes de `bin/api` : `inscription`, `connexion`, `comptes`, `ouvrir`, `depot`, `retrait`, `virement`, `historique` (200 dernières opérations). Codes ajoutés : 74 (compte d'un autre client), 77 (commande inconnue), 78 (rôle non autorisé), 79 (paramètre invalide).
 
 ## Menus
 
@@ -206,8 +210,16 @@ Commandes de `bin/api` : `connexion`, `comptes`, `depot`, `retrait`, `virement`,
 | 5 Historique d'un compte | 5 Traitement mensuel |
 | 6 Relevé de compte | 6 Relevé d'un compte |
 | 7 Changer mon PIN | 7 Changer mon PIN |
-| 0 Déconnexion | 8 Modifier un compte |
-| | 0 Déconnexion |
+| 8 Ouvrir un compte | 8 Modifier un compte |
+| 0 Déconnexion | 0 Déconnexion |
+
+Le menu de départ propose aussi `2 Créer mon compte client` (inscription libre).
+
+### Inscription et ouverture en libre-service
+
+- **Inscription** (`AUTH`, action `N`) : le nom contient des lettres (accents compris), chiffres, espaces, tirets ou apostrophes, 30 caractères au plus (sinon code 84) ; le PIN fait 4 à 6 chiffres (83). L'identifiant est attribué par le programme et le rôle est **toujours client**. Au-delà de `MAX_INSCRIPTIONS_HEURE` par heure : refus (85) et alerte `INSCRIPTIONS` visible dans le menu admin.
+- **Ouverture de compte** (`COMPTE`, action `N`) : le client choisit courant ou épargne (87 si autre chose) ; le compte est créé à solde 0, sans découvert, avec le plafond par défaut ; au-delà de `MAX_COMPTES_CLIENT` comptes : refus (88). L'ouverture est écrite dans l'historique (type `O`, « OUVERTURE DE COMPTE »). L'administrateur ajuste ensuite plafond et découvert (menu admin 8).
+- Il n'y a **aucune vérification d'identité** : n'importe qui peut s'inscrire. Acceptable pour un projet pédagogique local, pas pour un vrai service.
 
 ### Comptes courants et épargne
 
@@ -239,8 +251,8 @@ tests/        suites de tests
 | Module | Rôle | Codes de retour principaux |
 |---|---|---|
 | `BANQUE` | connexion, menus, saisies | — |
-| `AUTH` | clients, PIN, blocage | 00, 22, 23, 81 (identifiant ou PIN faux), 82 (bloqué), 83 (PIN invalide) |
-| `COMPTE` | comptes, dépôt, retrait, virement | 00, 22, 23, 90 (interdit sur épargne), 91 à 96, 98 |
+| `AUTH` | clients, inscription libre, PIN, blocage | 00, 22, 23, 81 (identifiant ou PIN faux), 82 (bloqué), 83 (PIN invalide), 84 (nom invalide), 85 (trop d'inscriptions) |
+| `COMPTE` | comptes, dépôt, retrait, virement | 00, 22, 23, 87, 88, 90 (interdit sur épargne), 91 à 96, 98 |
 | `TRX` | historique des transactions (ajout seul) | 00 |
 | `FRAUDE` | plafond journalier, montant anormal, alertes d'échecs de PIN | 00, 96 (plafond), 97 (alerte seule) |
 | `RELEVE` | relevé de compte (texte ou CSV) sur une période | 00, 23, 73, 74, 75 (incohérent), 76 (format inconnu) |
@@ -272,6 +284,8 @@ Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexé
 | `MIN_HISTORIQUE` | 3 | opérations minimales avant d'appliquer cette règle |
 | `TAUX_ANNUEL_PCT` | 1.50 | taux annuel des intérêts des comptes courants (%) |
 | `TAUX_EPARGNE_PCT` | 3.00 | taux annuel des intérêts des comptes épargne (%) |
+| `MAX_COMPTES_CLIENT` | 5 | comptes qu'un client peut ouvrir lui-même (l'administrateur n'est pas limité) |
+| `MAX_INSCRIPTIONS_HEURE` | 20 | inscriptions libres par heure ; au-delà, refus (code 85) et alerte `INSCRIPTIONS` |
 | `FRAIS_TENUE` | 2.00 | frais mensuels de tenue de compte |
 | `MAX_ECHECS_PIN` | 3 | échecs de PIN avant blocage |
 | `ALERTE_ECHECS` | 2 | échecs de PIN consécutifs déclenchant l'alerte `ECHECS_RAPIDES` (sans blocage) |
@@ -286,14 +300,14 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 | Suite | Couvre |
 |---|---|
 | `test_param` | lecture, fichiers invalides, effet d'une valeur modifiée sur AUTH, FRAUDE et BATCH-INT |
-| `test_compte` | création, dépôt, retrait, virement, cas de refus, plafond et anomalie, découvert et règles de l'épargne |
-| `test_auth` | création, PIN, blocage, déblocage, changement de PIN |
+| `test_compte` | création, dépôt, retrait, virement, cas de refus, plafond et anomalie, découvert et règles de l'épargne, ouverture de compte et limite par client |
+| `test_auth` | création, PIN, blocage, déblocage, changement de PIN, inscription libre (validations, limite horaire, alerte) |
 | `test_batch` | intérêts, frais, arrondis, dépassement, rejeu, période interrompue |
 | `test_releve` | périodes, soldes (y compris négatifs), cohérence, droits, export CSV, bout en bout |
 | `test_epargne` | batch : intérêts d'épargne, pas de frais sur l'épargne, frais limités par le découvert |
 | `test_trx` | numérotation de l'historique |
 | `test_menu.sh` | scénario complet par saisies redirigées (client, admin, blocage, batch, connexion par nom) |
-| `test_web.sh` | `bin/api` et serveur HTTP : connexion, comptes, opérations, refus, injections de paramètres, PIN absent des logs |
+| `test_web.sh` | `bin/api` et serveur HTTP : inscription, ouverture de compte, connexion, comptes, opérations, refus, injections de paramètres, PIN absent des logs |
 | `test_demo.sh` | le jeu de démonstration produit les soldes, alertes et relevés annoncés |
 
 ## Limites connues
@@ -301,5 +315,6 @@ Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIE
 - Un seul utilisateur à la fois : pas de gestion de concurrence entre plusieurs processus.
 - PIN pédagogique (voir l'avertissement en tête), fichiers non chiffrés.
 - Pas de devise ni de fuseau : une seule monnaie, date et heure du système.
+- Inscription libre sans vérification d'identité (limitée seulement par `MAX_INSCRIPTIONS_HEURE`) ; un nouveau client peut porter le même nom qu'un autre.
 - Pas d'agios : un solde négatif ne produit pas d'intérêts débiteurs.
 - Le relevé est un fichier texte ; il n'y a pas d'export PDF.

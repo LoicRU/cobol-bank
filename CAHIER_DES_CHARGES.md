@@ -41,6 +41,7 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - Jeu de données de test et tests de bout en bout.
 - *(V1.1)* Export CSV des relevés, connexion par identifiant ou par nom, jeu de démonstration (`make demo`).
 - *(V1.1)* Interface web locale côté client (consultation, dépôt, retrait, virement, historique) appelant les programmes COBOL.
+- *(V1.1)* Inscription libre et ouverture de comptes en libre-service (console et web).
 - *(V1.1)* Découvert autorisé par compte courant et comptes épargne (taux propre, retrait en espèces interdit).
 
 ### Exclu de la V1
@@ -79,6 +80,8 @@ COBOL fait tourner une grande partie des systèmes bancaires réels. Ce projet r
 - **F-CPT-4** : le client consulte le solde de ses comptes.
 - **F-CPT-5** *(V1.1)* : un compte est **courant** ou **épargne**. Un compte courant porte un découvert autorisé (0 par défaut) ; un compte épargne n'a jamais de découvert.
 - **F-CPT-6** *(V1.1)* : l'administrateur modifie le plafond journalier, le découvert (courant seulement) et le statut d'un compte.
+- **F-CPT-7** *(V1.1)* : inscription libre : un visiteur crée son client (nom, PIN), avec identifiant attribué et rôle client uniquement ; le nombre d'inscriptions par heure est limité (paramètre) et le dépassement génère une alerte.
+- **F-CPT-8** *(V1.1)* : un client ouvre lui-même des comptes courants ou épargne, dans la limite d'un nombre de comptes paramétrable ; l'ouverture est historisée.
 
 ### 4.3 Opérations
 
@@ -159,6 +162,7 @@ Les programmes communiquent par `CALL ... USING` avec des zones de liaison défi
 | Champ | Description |
 |---|---|
 | ID-CLIENT | Identifiant unique |
+| DATE-HEURE-INSCRIPTION | Inscription libre (0 si créé par un administrateur) |
 | NOM | Nom du client |
 | PIN-HASH | Empreinte du PIN |
 | ECHECS | Nombre d'échecs consécutifs |
@@ -213,6 +217,8 @@ Les valeurs ci-dessous sont des **valeurs par défaut proposées**, toutes modif
 | Plafond journalier de sorties par compte | 1 000,00 |
 | Découvert autorisé | 0 (modifiable par compte courant) |
 | Taux d'intérêt annuel de l'épargne | 3,00 % |
+| Comptes qu'un client peut ouvrir lui-même | 5 |
+| Inscriptions libres par heure | 20 |
 | Taux d'intérêt annuel | 1,50 % (appliqué au douzième chaque mois) |
 | Frais de tenue de compte mensuels | 2,00 |
 | Seuil d'alerte « montant anormal » | 5 fois la moyenne des opérations du compte |
