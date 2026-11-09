@@ -16,8 +16,9 @@
 *>     82 client bloque              83 PIN invalide (4 a 6 chiffres)
 *>     99 action inconnue            autre : FILE STATUS d'une erreur d'E/S
 *>
-*> Regles : 3 echecs consecutifs bloquent le client ; un succes remet le
-*> compteur a zero ; un client bloque est refuse meme avec le bon PIN.
+*> Regles : 3 echecs consecutifs bloquent le client (et ecrivent une alerte
+*> PIN_BLOQUE via FRAUDE) ; un succes remet le compteur a zero ; un client
+*> bloque est refuse meme avec le bon PIN.
 *> Un identifiant inconnu et un mauvais PIN donnent le meme code (81).
 *>
 *> ATTENTION - empreinte du PIN : elle est calculee en COBOL pur (sel propre
@@ -58,6 +59,13 @@ WORKING-STORAGE SECTION.
 01 WS-LEN          PIC 9.
 01 WS-PIN-OK       PIC X.
 01 WS-TIME         PIC 9(8).
+01 WS-BLOQUE-ICI   PIC X.
+01 WS-FRD-ACTION   PIC X VALUE "B".
+01 WS-FRD-CPT      PIC 9(10) VALUE 0.
+01 WS-FRD-CLI      PIC 9(6).
+01 WS-FRD-MONTANT  PIC 9(9)V99 VALUE 0.
+01 WS-FRD-PLAFOND  PIC 9(7)V99 VALUE 0.
+01 WS-FRD-STATUS   PIC XX.
 
 LINKAGE SECTION.
 01 LK-ACTION       PIC X.
@@ -189,19 +197,32 @@ VERIFIER-PIN.
                 END-IF
             END-IF
         ELSE
+            MOVE "N" TO WS-BLOQUE-ICI
             ADD 1 TO CLI-ECHECS
             IF CLI-ECHECS >= WS-MAX-ECHECS
                 MOVE "B" TO CLI-STATUT
                 MOVE "82" TO LK-STATUS
+                MOVE "O" TO WS-BLOQUE-ICI
             ELSE
                 MOVE "81" TO LK-STATUS
             END-IF
             REWRITE CLIENT-REC
             IF WS-FS NOT = "00"
                 MOVE WS-FS TO LK-STATUS
+            ELSE
+                IF WS-BLOQUE-ICI = "O"
+                    PERFORM ALERTER-BLOCAGE
+                END-IF
             END-IF
         END-IF
     END-IF.
+
+*> Signale le blocage au journal d'alertes (un echec d'alerte ne change
+*> pas le resultat : le client est bloque dans tous les cas)
+ALERTER-BLOCAGE.
+    MOVE CLI-ID TO WS-FRD-CLI
+    CALL "FRAUDE" USING WS-FRD-ACTION WS-FRD-CPT WS-FRD-CLI
+                        WS-FRD-MONTANT WS-FRD-PLAFOND WS-FRD-STATUS.
 
 *> WS-PIN-OK = "O" si WS-PIN-IN fait 4 a 6 chiffres suivis d'espaces
 VALIDER-PIN.
