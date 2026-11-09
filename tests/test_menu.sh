@@ -101,6 +101,13 @@ echo "MENU : fin de saisie sans plantage"
 printf '' | timeout 20 $BIN > $T/MENU_7.out 2>&1
 verifie "arret propre sur fin d'entree" $T/MENU_7.out "arret"
 
+echo "MENU : erreur de fichier (arret propre)"
+printf '%s\n' 1 2 4321 1 0 0 | COMPTES_FILE=$T $BIN > $T/MENU_8.out 2>&1
+CODE=$?
+verifie "message d'erreur fichier" $T/MENU_8.out "Erreur fichier"
+verifie "arret du programme" $T/MENU_8.out "arret du programme"
+if [ $CODE -ne 0 ]; then echo "  PASS code retour non nul"; else echo "  FAIL code retour non nul"; NB_ECHECS=$((NB_ECHECS + 1)); fi
+
 rm -f $T/MENU_* $T/RELEVE_1000000001_* $T/RELEVE_1000000002_* $T/BATCH_*.txt
 if [ $NB_ECHECS -eq 0 ]; then
     echo "TOUS LES TESTS PASSENT"

@@ -6,7 +6,7 @@ Mini core-banking en **GnuCOBOL** : fichiers indexés, menu console, authentific
 
 ## Fonctions
 
-- **Authentification** : identifiant + PIN (4 à 6 chiffres), blocage après 3 échecs, alerte de fraude, déblocage par un administrateur.
+- **Authentification** : identifiant + PIN (4 à 6 chiffres), blocage après 3 échecs, alertes de fraude (échecs rapprochés, blocage), déblocage par un administrateur.
 - **Comptes** : création, statuts actif / gelé / clos, plafond journalier par compte.
 - **Opérations** : dépôt, retrait, virement atomique ; chaque tentative (acceptée ou refusée, avec motif) est écrite dans l'historique.
 - **Fraude** : plafond journalier de sorties (refus) et montant anormal par rapport à la moyenne du compte (alerte), journal d'alertes consultable par l'administrateur.
@@ -90,7 +90,7 @@ tests/        suites de tests
 | `AUTH` | clients, PIN, blocage | 00, 22, 23, 81 (identifiant ou PIN faux), 82 (bloqué), 83 (PIN invalide) |
 | `COMPTE` | comptes, dépôt, retrait, virement | 00, 22, 23, 91 à 96, 98 |
 | `TRX` | historique des transactions (ajout seul) | 00 |
-| `FRAUDE` | plafond journalier, montant anormal, alerte de blocage | 00, 96 (plafond), 97 (alerte seule) |
+| `FRAUDE` | plafond journalier, montant anormal, alertes d'échecs de PIN | 00, 96 (plafond), 97 (alerte seule) |
 | `RELEVE` | relevé de compte sur une période | 00, 23, 73, 74, 75 (incohérent) |
 | `BATCH-INT` | intérêts et frais mensuels | 00, 71 (déjà traitée), 72 (interrompue), 73 |
 | `PARAM` | lecture et validation de la configuration | 00, 61, 62, 63 |
@@ -104,6 +104,7 @@ Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexé
 - Le virement est atomique : les deux comptes sont validés avant d'écrire, et la source est restaurée si l'écriture de la destination échoue.
 - L'historique garde le solde après chaque opération, ce qui permet de vérifier un relevé.
 - Un identifiant inconnu et un mauvais PIN renvoient le même code (81).
+- Une erreur d'entrée/sortie dans le menu affiche un message clair et arrête le programme (code retour 1).
 - Une configuration invalide est refusée : le programme ne démarre pas, et les modules n'agissent pas.
 
 ## Configuration
@@ -118,6 +119,8 @@ Données : `COMPTES.dat`, `CLIENTS.dat` et `BATCH.dat` sont des fichiers indexé
 | `TAUX_ANNUEL_PCT` | 1.50 | taux annuel des intérêts (%) |
 | `FRAIS_TENUE` | 2.00 | frais mensuels de tenue de compte |
 | `MAX_ECHECS_PIN` | 3 | échecs de PIN avant blocage |
+| `ALERTE_ECHECS` | 2 | échecs de PIN consécutifs déclenchant l'alerte `ECHECS_RAPIDES` (sans blocage) |
+| `FENETRE_ECHECS_SEC` | 300 | durée (secondes) dans laquelle ces échecs doivent survenir |
 
 Variables d'environnement (utiles surtout pour les tests) : `PARAMS_FILE`, `CLIENTS_FILE`, `COMPTES_FILE`, `TRX_FILE`, `ALERTES_FILE`, `BATCH_FILE`, `BATCH_REPORT_DIR`, `RELEVE_DIR`.
 

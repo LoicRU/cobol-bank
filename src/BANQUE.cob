@@ -246,6 +246,7 @@ DECONNEXION.
 LISTER-MES-COMPTES.
     MOVE 0 TO WS-NB
     OPEN INPUT F-CPT
+    PERFORM CONTROLER-OUVERTURE
     IF WS-FS = "00"
         MOVE "N" TO WS-FIN
         PERFORM UNTIL WS-FIN = "O"
@@ -333,6 +334,7 @@ VOIR-HISTORIQUE.
         MOVE CPT-NUM TO WS-CPT-CIBLE
         MOVE 0 TO WS-NB
         OPEN INPUT F-TRX
+    PERFORM CONTROLER-OUVERTURE
         IF WS-FS = "00"
             MOVE "N" TO WS-FIN
             PERFORM UNTIL WS-FIN = "O"
@@ -573,6 +575,7 @@ ADMIN-ALERTES.
     ELSE
         MOVE 0 TO WS-NB
         OPEN INPUT F-ALR
+    PERFORM CONTROLER-OUVERTURE
         IF WS-FS = "00"
             MOVE "N" TO WS-FIN
             PERFORM UNTIL WS-FIN = "O"
@@ -755,6 +758,7 @@ SAISIR-PIN-NOUVEAU-SEUL.
 VERIFIER-CLIENT-EXISTE.
     MOVE "23" TO WS-STATUS
     OPEN INPUT F-CLI
+    PERFORM CONTROLER-OUVERTURE
     IF WS-FS = "00"
         MOVE "N" TO WS-FIN
         PERFORM UNTIL WS-FIN = "O"
@@ -775,6 +779,7 @@ VERIFIER-CLIENT-EXISTE.
 PROCHAIN-CLIENT.
     MOVE 0 TO WS-MAX
     OPEN INPUT F-CLI
+    PERFORM CONTROLER-OUVERTURE
     IF WS-FS = "00"
         MOVE "N" TO WS-FIN
         PERFORM UNTIL WS-FIN = "O"
@@ -794,6 +799,7 @@ PROCHAIN-CLIENT.
 PROCHAIN-COMPTE.
     MOVE 1000000000 TO WS-MAX
     OPEN INPUT F-CPT
+    PERFORM CONTROLER-OUVERTURE
     IF WS-FS = "00"
         MOVE "N" TO WS-FIN
         PERFORM UNTIL WS-FIN = "O"
@@ -814,6 +820,22 @@ FORMATER-DATE.
     MOVE SPACES TO WS-DATE-ED
     STRING WS-DATE-SRC(1:4) "-" WS-DATE-SRC(5:2) "-" WS-DATE-SRC(7:2)
         DELIMITED BY SIZE INTO WS-DATE-ED.
+
+*> Apres un OPEN INPUT : le fichier doit etre ouvert (00) ou absent (35,
+*> traite comme vide) ; toute autre erreur arrete le programme
+CONTROLER-OUVERTURE.
+    IF WS-FS NOT = "00" AND WS-FS NOT = "35"
+        MOVE WS-FS TO WS-STATUS
+        PERFORM ERREUR-FATALE
+    END-IF.
+
+*> Erreur d'entree/sortie : message clair, arret propre (code retour 1)
+ERREUR-FATALE.
+    DISPLAY " "
+    DISPLAY "Erreur fichier (" WS-STATUS ") : arret du programme."
+    DISPLAY "Aucune donnee n'est perdue ; verifier les fichiers de data/."
+    MOVE 1 TO RETURN-CODE
+    STOP RUN.
 
 *> Message en clair pour WS-STATUS
 MESSAGE-STATUT.
@@ -840,5 +862,5 @@ MESSAGE-STATUT.
         WHEN "96" DISPLAY "Plafond journalier depasse."
         WHEN "98" DISPLAY "Fait, mais historique non ecrit."
         WHEN "99" DISPLAY "Saisie invalide."
-        WHEN OTHER DISPLAY "Erreur fichier (" WS-STATUS ")."
+        WHEN OTHER PERFORM ERREUR-FATALE
     END-EVALUATE.
