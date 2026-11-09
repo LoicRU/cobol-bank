@@ -11,15 +11,27 @@ FILE-CONTROL.
         ACCESS MODE IS RANDOM
         RECORD KEY IS FT-ID
         FILE STATUS IS WS-FS-CLI.
+    SELECT F-ALR ASSIGN TO "tests/ALERTES_AUTH_TEST.dat"
+        ORGANIZATION IS LINE SEQUENTIAL
+        FILE STATUS IS WS-FS-ALR.
 
 DATA DIVISION.
 FILE SECTION.
 FD F-CLI.
 COPY "CLIENT.cpy" REPLACING LEADING ==CLI-== BY ==FT-==
                             ==CLIENT-REC== BY ==FT-REC==.
+FD F-ALR.
+COPY "ALERTE.cpy" REPLACING LEADING ==ALR-== BY ==FA-==
+                            ==ALERTE-REC== BY ==FA-REC==.
 
 WORKING-STORAGE SECTION.
 COPY "CLIENT.cpy".
+COPY "ALERTE.cpy" REPLACING LEADING ==ALR-== BY ==LA-==
+                            ==ALERTE-REC== BY ==LA-REC==.
+01 WS-FS-ALR      PIC XX.
+01 WS-FIN         PIC X.
+01 WS-NB-ALR      PIC 9(5).
+01 WS-NB-ALR-ATT  PIC 9(5).
 01 WS-ACTION      PIC X.
 01 WS-PIN         PIC X(6).
 01 WS-NEWPIN      PIC X(6).
@@ -41,6 +53,9 @@ MAIN-PARA.
     CALL "CBL_DELETE_FILE" USING "tests/CLIENTS_TEST.dat"
     DISPLAY "CLIENTS_FILE" UPON ENVIRONMENT-NAME
     DISPLAY "tests/CLIENTS_TEST.dat" UPON ENVIRONMENT-VALUE
+    CALL "CBL_DELETE_FILE" USING "tests/ALERTES_AUTH_TEST.dat"
+    DISPLAY "ALERTES_FILE" UPON ENVIRONMENT-NAME
+    DISPLAY "tests/ALERTES_AUTH_TEST.dat" UPON ENVIRONMENT-VALUE
 
     *> --- creation ---
     MOVE "C" TO WS-ACTION
@@ -160,6 +175,8 @@ MAIN-PARA.
     MOVE 3 TO WS-ECHECS-ATT
     MOVE "B" TO WS-STATUT-ATT
     PERFORM VERIF-ETAT
+    MOVE 1 TO WS-NB-ALR-ATT
+    PERFORM VERIF-ALERTE
 
     MOVE "1234" TO WS-PIN
     MOVE "bon PIN mais client bloque (refus)" TO WS-LIBELLE
@@ -235,7 +252,12 @@ MAIN-PARA.
     PERFORM APPELER
     PERFORM VERIFIER
 
+    *> toujours une seule alerte : seul le blocage en a produit une
+    MOVE 1 TO WS-ID
+    PERFORM VERIF-ALERTE
+
     CALL "CBL_DELETE_FILE" USING "tests/CLIENTS_TEST.dat"
+    CALL "CBL_DELETE_FILE" USING "tests/ALERTES_AUTH_TEST.dat"
     IF WS-NB-ECHECS = 0
         DISPLAY "TOUS LES TESTS PASSENT"
         MOVE 0 TO RETURN-CODE
@@ -259,6 +281,32 @@ VERIFIER.
     ELSE
         DISPLAY "FAIL " WS-LIBELLE " (statut " WS-STATUS
                 ", attendu " WS-ATTENDU ")"
+        ADD 1 TO WS-NB-ECHECS
+    END-IF.
+
+*> Journal d'alertes : WS-NB-ALR-ATT alerte(s), derniere PIN_BLOQUE du client 1
+VERIF-ALERTE.
+    MOVE 0 TO WS-NB-ALR
+    MOVE "N" TO WS-FIN
+    OPEN INPUT F-ALR
+    IF WS-FS-ALR = "00"
+        PERFORM UNTIL WS-FIN = "O"
+            READ F-ALR
+                AT END MOVE "O" TO WS-FIN
+                NOT AT END
+                    ADD 1 TO WS-NB-ALR
+                    MOVE FA-REC TO LA-REC
+            END-READ
+        END-PERFORM
+        CLOSE F-ALR
+    END-IF
+    IF WS-NB-ALR = WS-NB-ALR-ATT AND LA-REGLE = "PIN_BLOQUE"
+       AND LA-ID-CLIENT = 1
+        DISPLAY "  PASS alerte : " WS-NB-ALR " au journal, "
+                LA-REGLE " client " LA-ID-CLIENT
+    ELSE
+        DISPLAY "  FAIL alerte : " WS-NB-ALR " au journal, attendu "
+                WS-NB-ALR-ATT
         ADD 1 TO WS-NB-ECHECS
     END-IF.
 
