@@ -1,0 +1,119 @@
+*> test_trx.cob - numerotation de l'historique (TRX)
+*> Le dernier id est garde en memoire ; il doit etre releve si le fichier
+*> est modifie, remplace ou supprime entre deux appels.
+IDENTIFICATION DIVISION.
+PROGRAM-ID. TEST-TRX.
+
+ENVIRONMENT DIVISION.
+INPUT-OUTPUT SECTION.
+FILE-CONTROL.
+    SELECT F-TRX ASSIGN TO "tests/TRX_NUM_TEST.dat"
+        ORGANIZATION IS LINE SEQUENTIAL
+        FILE STATUS IS WS-FS.
+
+DATA DIVISION.
+FILE SECTION.
+FD F-TRX.
+COPY "TRX.cpy" REPLACING LEADING ==TRX-== BY ==FT-==
+                         ==TRX-REC== BY ==FT-REC==.
+
+WORKING-STORAGE SECTION.
+COPY "TRX.cpy".
+01 WS-FS            PIC XX.
+01 WS-STATUS        PIC XX.
+01 WS-LIBELLE       PIC X(50).
+01 WS-ATTENDU       PIC 9(10).
+01 WS-NB-ECHECS     PIC 9(3) VALUE 0.
+01 WS-I             PIC 9(5).
+
+PROCEDURE DIVISION.
+MAIN-PARA.
+    DISPLAY "TRX_FILE" UPON ENVIRONMENT-NAME
+    DISPLAY "tests/TRX_NUM_TEST.dat" UPON ENVIRONMENT-VALUE
+    CALL "CBL_DELETE_FILE" USING "tests/TRX_NUM_TEST.dat"
+
+    DISPLAY "TRX : numerotation"
+    MOVE 1 TO WS-ATTENDU
+    MOVE "fichier absent : premier id = 1" TO WS-LIBELLE
+    PERFORM AJOUTER
+    MOVE 2 TO WS-ATTENDU
+    MOVE "deuxieme ligne : id = 2 (en memoire)" TO WS-LIBELLE
+    PERFORM AJOUTER
+    MOVE 3 TO WS-ATTENDU
+    MOVE "troisieme ligne : id = 3" TO WS-LIBELLE
+    PERFORM AJOUTER
+
+    PERFORM AJOUT-EXTERNE
+    MOVE 11 TO WS-ATTENDU
+    MOVE "ligne ajoutee hors TRX (id 10) : suite = 11" TO WS-LIBELLE
+    PERFORM AJOUTER
+
+    CALL "CBL_DELETE_FILE" USING "tests/TRX_NUM_TEST.dat"
+    MOVE 1 TO WS-ATTENDU
+    MOVE "fichier supprime : repart a 1" TO WS-LIBELLE
+    PERFORM AJOUTER
+
+    PERFORM REMPLACER-FICHIER
+    MOVE 6 TO WS-ATTENDU
+    MOVE "fichier remplace (5 lignes) : suite = 6" TO WS-LIBELLE
+    PERFORM AJOUTER
+
+    PERFORM VARYING WS-I FROM 1 BY 1 UNTIL WS-I > 500
+        PERFORM AJOUTER-SILENCIEUX
+    END-PERFORM
+    MOVE 507 TO WS-ATTENDU
+    MOVE "apres 500 ajouts : id = 507" TO WS-LIBELLE
+    PERFORM AJOUTER
+
+    CALL "CBL_DELETE_FILE" USING "tests/TRX_NUM_TEST.dat"
+    IF WS-NB-ECHECS = 0
+        DISPLAY "TOUS LES TESTS PASSENT"
+        MOVE 0 TO RETURN-CODE
+    ELSE
+        DISPLAY "ECHECS : " WS-NB-ECHECS
+        MOVE 1 TO RETURN-CODE
+    END-IF
+    STOP RUN.
+
+AJOUTER-SILENCIEUX.
+    INITIALIZE TRX-REC
+    MOVE "D" TO TRX-TYPE
+    MOVE 1 TO TRX-CPT-DST
+    MOVE 1 TO TRX-MONTANT
+    MOVE "A" TO TRX-STATUT
+    CALL "TRX" USING TRX-REC WS-STATUS.
+
+AJOUTER.
+    INITIALIZE TRX-REC
+    MOVE "D" TO TRX-TYPE
+    MOVE 1 TO TRX-CPT-DST
+    MOVE 1 TO TRX-MONTANT
+    MOVE "A" TO TRX-STATUT
+    CALL "TRX" USING TRX-REC WS-STATUS
+    IF WS-STATUS = "00" AND TRX-ID = WS-ATTENDU
+        DISPLAY "  PASS " WS-LIBELLE
+    ELSE
+        DISPLAY "  FAIL " WS-LIBELLE " (id " TRX-ID ", statut "
+                WS-STATUS ")"
+        ADD 1 TO WS-NB-ECHECS
+    END-IF.
+
+*> Ecrit une ligne d'id 10 sans passer par TRX
+AJOUT-EXTERNE.
+    OPEN EXTEND F-TRX
+    INITIALIZE FT-REC
+    MOVE 10 TO FT-ID
+    MOVE "D" TO FT-TYPE
+    WRITE FT-REC
+    CLOSE F-TRX.
+
+*> Remplace le fichier par 5 lignes (ids 1 a 5) sans passer par TRX
+REMPLACER-FICHIER.
+    OPEN OUTPUT F-TRX
+    PERFORM VARYING WS-I FROM 1 BY 1 UNTIL WS-I > 5
+        INITIALIZE FT-REC
+        MOVE WS-I TO FT-ID
+        MOVE "D" TO FT-TYPE
+        WRITE FT-REC
+    END-PERFORM
+    CLOSE F-TRX.

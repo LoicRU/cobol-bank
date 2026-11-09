@@ -28,7 +28,11 @@ bin/test_releve: tests/test_releve.cob src/PARAM.cob src/RELEVE.cob src/COMPTE.c
 bin/test_param: tests/test_param.cob src/PARAM.cob src/AUTH.cob src/FRAUDE.cob src/COMPTE.cob src/TRX.cob src/BATCH-INT.cob copybooks/PARAMS.cpy copybooks/CLIENT.cpy copybooks/COMPTE.cpy copybooks/BATCH.cpy copybooks/TRX.cpy copybooks/ALERTE.cpy
 	$(COBC) -x $(FLAGS) -o $@ tests/test_param.cob src/PARAM.cob src/AUTH.cob src/FRAUDE.cob src/COMPTE.cob src/TRX.cob src/BATCH-INT.cob
 
-test: bin/test_param bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/banque
+bin/test_trx: tests/test_trx.cob src/TRX.cob copybooks/TRX.cpy
+	$(COBC) -x $(FLAGS) -o $@ tests/test_trx.cob src/TRX.cob
+
+test: bin/test_trx bin/test_param bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/banque
+	./bin/test_trx
 	./bin/test_param
 	./bin/test_compte
 	./bin/test_auth
@@ -37,4 +41,4 @@ test: bin/test_param bin/test_compte bin/test_auth bin/test_batch bin/test_relev
 	sh tests/test_menu.sh
 
 clean:
-	rm -f bin/banque bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_param tests/*.dat tests/*.txt tests/*.idx
+	rm -f bin/banque bin/test_compte bin/test_auth bin/test_batch bin/test_releve bin/test_param bin/test_trx tests/*.dat tests/*.txt tests/*.idx
